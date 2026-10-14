@@ -176,7 +176,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: void-packages/hostdir/sources/librewolf-${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.distfile }}
-          key: librewolf-source-v5-${{ steps.meta.outputs.sha256 }}
+          key: librewolf-source-v4-${{ steps.meta.outputs.sha256 }}
 
       - name: fetch and verify LibreWolf source
         timeout-minutes: 20
@@ -216,7 +216,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: void-packages/hostdir/sources/librewolf-${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.distfile }}
-          key: librewolf-source-v5-${{ steps.meta.outputs.sha256 }}
+          key: librewolf-source-v4-${{ steps.meta.outputs.sha256 }}
 
       - name: build package
         timeout-minutes: 350
