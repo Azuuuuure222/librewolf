@@ -602,7 +602,7 @@ Adds the missing C++ standard header needed by the Parakeet code.
 
 ### `sandbox-sched_setscheduler.patch`
 
-Adjusts the Linux sandbox syscall handling for musl, following the relevant upstream bug/workaround.
+Preserves PID-restricted scheduler calls for glibc while allowing the required `sched_setscheduler` path on musl. The Firefox 158 hunk also accounts for OpenH264's newer `sched_getaffinity` handling.
 
 Most of these patches are synchronized with corresponding current Void Firefox patches where possible rather than being broad LibreWolf forks.
 
