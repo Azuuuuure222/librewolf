@@ -1,0 +1,42 @@
+name: one-time stale branch cleanup
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/cleanup-obsolete-branches.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove stale, redundant branches and this temporary workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # These refs are confirmed redundant: one is fully behind master;
+          # the other contains two CI-hardening commits whose changes are on master.
+          for ref in \
+            "audit%2Fbuild65-opt" \
+            "hardening-pgo-cache-and-release-publishing"; do
+            gh api --method DELETE "repos/${GH_REPO}/git/refs/heads/${ref}" >/dev/null
+            echo "Deleted branch ref: ${ref}"
+          done
+
+          # Do not leave a permanent cleanup workflow in the repository.
+          path=".github/workflows/cleanup-obsolete-branches.yml"
+          sha="$(gh api "repos/${GH_REPO}/contents/${path}?ref=master" --jq '.sha')"
+          gh api --method DELETE "repos/${GH_REPO}/contents/${path}" \
+            -f message="chore: remove one-time branch cleanup workflow" \
+            -f sha="${sha}" \
+            -f branch="master" >/dev/null
+          echo "Removed temporary cleanup workflow."
