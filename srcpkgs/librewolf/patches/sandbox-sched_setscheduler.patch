@@ -1,17 +1,10 @@
 upstream bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1657849
-# Updated for Firefox/LibreWolf 158: OpenH264 added sched_getaffinity handling
-# to the plugin sandbox; preserve the musl sched_setscheduler workaround there too.
+# Keep scheduler syscall policy valid on musl; minimize context to tolerate
+# harmless upstream movement in SandboxFilter.cpp.
 diff --git a/security/sandbox/linux/SandboxFilter.cpp b/security/sandbox/linux/SandboxFilter.cpp
 --- a/security/sandbox/linux/SandboxFilter.cpp
 +++ b/security/sandbox/linux/SandboxFilter.cpp
-@@ -1920,13 +1920,20 @@
-       case __NR_sched_get_priority_min:
-       case __NR_sched_get_priority_max:
-         return Allow();
-       // The OpenH264 plugin needs sched_getaffinity() in multithreaded mode;
-       // bug 2071378.
-       case __NR_sched_getaffinity:
-       case __NR_sched_getparam:
+@@ -1927,5 +1927,12 @@
        case __NR_sched_getscheduler:
 -      case __NR_sched_setscheduler: {
 +#ifdef __GLIBC__
@@ -31,7 +24,8 @@ diff --git a/security/sandbox/linux/SandboxFilter.cpp b/security/sandbox/linux/S
        case __NR_sched_setparam:
        case __NR_sched_getscheduler:
 +#ifdef __GLIBC__
-       case __NR_sched_setscheduler:
+-      case __NR_sched_setscheduler:
++      case __NR_sched_setscheduler:
 +#endif
        case __NR_sched_getattr:
        case __NR_sched_setattr: {
