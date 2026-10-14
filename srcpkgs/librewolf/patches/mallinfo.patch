@@ -1,14 +1,16 @@
---- a/xpcom/base/nsMemoryReporterManager.cpp	2019-03-19 17:12:20.844810044 +0100
-+++ b/xpcom/base/nsMemoryReporterManager.cpp	2019-03-19 17:13:32.505133615 +0100
-@@ -123,6 +123,7 @@
-   return GetProcSelfSmapsPrivate(aN);
+--- a/xpcom/base/nsMemoryReporterManager.cpp
++++ b/xpcom/base/nsMemoryReporterManager.cpp
+@@ -152,5 +152,6 @@
+   *aN = int64_t(privateClean + privateDirty) * 1024;
+   return NS_OK;
  }
  
 +#ifdef __GLIBC__
  #  ifdef HAVE_MALLINFO
  #    define HAVE_SYSTEM_HEAP_REPORTER 1
- static MOZ_MUST_USE nsresult SystemHeapSize(int64_t* aSizeOut) {
-@@ -142,6 +143,7 @@
+ [[nodiscard]] static nsresult SystemHeapSize(int64_t* aSizeOut) {
+@@ -171,6 +172,7 @@
+   *aSizeOut = size_t(info.hblkhd) + size_t(info.uordblks);
    return NS_OK;
  }
  #  endif
@@ -16,19 +18,3 @@
  
  #elif defined(__DragonFly__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
      defined(__OpenBSD__) || defined(__FreeBSD_kernel__)
-@@ -642,6 +644,7 @@
-   return NS_OK;
- }
- 
-+#ifdef __GLIBC__
- #  define HAVE_SYSTEM_HEAP_REPORTER 1
- // Windows can have multiple separate heaps. During testing there were multiple
- // heaps present but the non-default ones had sizes no more than a few 10s of
-@@ -698,6 +701,7 @@
-   *aSizeOut = heapsSize;
-   return NS_OK;
- }
-+#endif // __GLIBC__
- 
- struct SegmentKind {
-   DWORD mState;

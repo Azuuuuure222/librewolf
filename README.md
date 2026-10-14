@@ -170,14 +170,7 @@ C/C++
 Rust
 ```
 
-Rust is additionally forced through the downstream `lto-thin.patch` to use Rust ThinLTO rather than Rust fat/full LTO for the top-level Rust integration.
-
-The reasoning is practical:
-
-- retain cross-language optimization
-- reduce the cost and fragility of Rust fat-LTO
-- avoid an unnecessarily expensive link strategy
-- let LLD perform the final global optimization work
+Rust cross-language LTO is handled by Firefox 158's Cargo action (`RUN_CARGO_ACTION`) and the configured `--enable-lto=cross,full` mode. The old `lto-thin.patch` edited the removed `cargo_rustc_flags` path, so it no longer applies and has been removed.
 
 The final LLD stage also uses parallel threads and partitions:
 
@@ -248,15 +241,9 @@ merged.profdata
 jarlog
 ```
 
-The PGO cache key includes:
+The PGO cache key includes the verified LibreWolf source SHA-256, package template, downstream patches, build workflow, and relevant Void templates for LLVM, Rust, WASI SDK, sccache, and the base chroot. The namespace is bumped to `v5` for this broader toolchain identity.
 
-- the verified LibreWolf source SHA-256
-- the configured PGO cache schema version
-- the package template (compiler and linker flags / mozconfig)
-- all downstream patch contents
-- the build workflow
-
-This prevents profile reuse after recipe, patch, or workflow changes. Bump `LIBREWOLF_PGO_CACHE_VERSION` when profile-relevant inputs change outside those hashed files, such as an intentional PGO workload/schema change.
+This prevents profiles from being reused after recipe, patch, workflow, or toolchain-recipe changes. Bump `LIBREWOLF_PGO_CACHE_VERSION` for workload/schema changes not represented by those files.
 
 The intent is:
 
@@ -605,13 +592,9 @@ glibc and musl do not represent `pthread_t` identically, so the patch serializes
 
 Updates the WASI triplet expected by LLVM 22 from the older `wasm32-wasi` naming to the current `wasm32-wasip1` target.
 
-### `lto-thin.patch`
-
-Forces Rust ThinLTO in the cross-language LTO path instead of Rust fat-LTO.
-
 ### `mallinfo.patch`
 
-Avoids glibc-specific memory-reporting code where it does not apply to musl.
+Guards the Linux `mallinfo` reporter with `__GLIBC__`, leaving the unrelated Windows heap reporter untouched.
 
 ### `parakeet-missing-cstdint.patch`
 
@@ -636,6 +619,8 @@ firefox-152-missing-cstdint-include.patch
 ```
 
 Keeping obsolete patches would increase maintenance cost and make future source updates more fragile.
+
+For LibreWolf 158, `lto-thin.patch` was removed because Firefox migrated Rust builds to `RUN_CARGO_ACTION`; its old `cargo_rustc_flags` hunk no longer exists.
 
 The same principle is used for the rest of the patch set: a patch should remain only while it is required by the selected source/toolchain/target.
 
@@ -780,7 +765,6 @@ srcpkgs/
         ├── fix-fortify-system-wrappers.patch
         ├── librewolf-157-audio_thread_priority-musl.patch
         ├── llvm22.patch
-        ├── lto-thin.patch
         ├── mallinfo.patch
         ├── parakeet-missing-cstdint.patch
         └── sandbox-sched_setscheduler.patch
