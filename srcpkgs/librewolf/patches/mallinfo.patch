@@ -1,6 +1,6 @@
 --- a/xpcom/base/nsMemoryReporterManager.cpp
 +++ b/xpcom/base/nsMemoryReporterManager.cpp
-@@ -152,5 +152,6 @@
+@@ -152,7 +152,8 @@
    *aN = int64_t(privateClean + privateDirty) * 1024;
    return NS_OK;
  }
