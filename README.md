@@ -23,11 +23,12 @@ The GitHub Actions runner is **not** the target device; it is only the high-reso
 - **RAM:** 4 GB DDR3
 - **Storage:** HDD
 - **Session:** Wayland
+- **Audio backend:** PulseAudio protocol (for PipeWire's `pipewire-pulse`) plus ALSA
 - **Architecture:** x86_64-musl
 - **CPU baseline:** Skylake
 - **Package:** LibreWolf
-- **Current source configured here:** LibreWolf 157.0, source revision 1
-- **Void package revision:** 6
+- **Current source configured here:** LibreWolf 158.0, source revision 1
+- **Void package revision:** 1
 
 This repository is intentionally **not** a generic x86_64 LibreWolf package. The binary is tuned for the machine that will actually run it. Portability to older CPUs and unrelated x86_64 systems is not a project goal.
 
@@ -232,9 +233,7 @@ This matters because the package itself is built inside the xbps chroot while We
 
 ## CI PGO workload
 
-When building manually outside CI, the package retains an X11/Xvfb fallback so PGO can still be generated when no Wayland compositor is available.
-
-CI does not silently fall back to X11 when its Wayland compositor is expected.
+This target-specific recipe has no X11/Xvfb PGO fallback. On a cache miss, profile generation requires the runner-provided Wayland socket and marker files; a manual build without that runtime setup must use a valid cached profile or disable PGO.
 
 ---
 
@@ -249,18 +248,20 @@ merged.profdata
 jarlog
 ```
 
-The exact PGO cache key includes:
+The PGO cache key includes:
 
-- LibreWolf source SHA-256
-- the configured PGO cache version
+- the verified LibreWolf source SHA-256
+- the configured PGO cache schema version
+- the package template (compiler and linker flags / mozconfig)
 - all downstream patch contents
+- the build workflow
 
-Unrelated package-recipe changes do not invalidate the PGO profile automatically. When a compiler flag, linker strategy, PGO workload, toolchain, or another profile-relevant input changes, bump `LIBREWOLF_PGO_CACHE_VERSION` deliberately.
+This prevents profile reuse after recipe, patch, or workflow changes. Bump `LIBREWOLF_PGO_CACHE_VERSION` when profile-relevant inputs change outside those hashed files, such as an intentional PGO workload/schema change.
 
 The intent is:
 
 ```text
-same source + same patches + same PGO cache version
+same source + same template + same patches + same workflow + same PGO cache version
         |
         +--> reuse PGO profile
         |
@@ -539,21 +540,13 @@ Default build options are:
 alsa
 dbus
 pulseaudio
-wayland
 lto
 pgo
 clang
 wasi
 ```
 
-The template also exposes:
-
-```text
-jack
-xscreensaver
-sndio
-debug
-```
+The only additional option is `debug`. Wayland is enforced by the recipe, not exposed as a toggle. XScreenSaver, sndio, and JACK backends were removed because they are irrelevant to this Wayland/PipeWire target.
 
 The package is intentionally optimized around Wayland and the actual target system.
 
@@ -737,23 +730,15 @@ The workflow publishes:
 
 The checksum step verifies and prints SHA-256 and SHA-512 digests for the published artifacts in the build log; it does not create separate checksum files.
 
-The release tag is derived from:
+The release tag starts with:
 
 ```text
 <LibreWolf version>-<source revision>
 ```
 
-For the current recipe that is:
+For this recipe it is `158.0-1`. Package revision 1 keeps the upstream-style tag. A packaging-only revision above 1 adds `-rN` (for example, `158.0-1-r2`) so it cannot collide with an already published release.
 
-```text
-157.0-1
-```
-
-The Void package revision is tracked separately in the template.
-
-Rebuilding the same LibreWolf source revision may deliberately update the same release tag. This is acceptable for a personal package repository.
-
-The project is not trying to preserve every intermediate build as an immutable release artifact.
+Published tags and release assets are immutable: the workflow refuses to move a tag and never overwrites an existing asset.
 
 XBPS package signing is not configured as a shared Void trust chain.
 

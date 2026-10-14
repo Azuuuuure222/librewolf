@@ -1,7 +1,7 @@
 # Template file for 'librewolf'
 pkgname=librewolf
-version=157.0
-revision=6
+version=158.0
+revision=1
 _rev=1
 wrksrc=${pkgname}-${version}-${_rev}
 build_helper="rust"
@@ -10,7 +10,7 @@ maintainer="index <index@mailbox.org>"
 license="GPL-3.0-only AND LGPL-2.1-only AND LGPL-3.0-only AND MPL-2.0"
 homepage="https://librewolf.dev"
 distfiles="https://librewolf.dev/api/packages/librewolf/generic/librewolf-source/${version}-${_rev}/${pkgname}-${version}-${_rev}.source.tar.gz"
-checksum=bea3cc7c57f3fb8928d583a0603b0f40130b02f662e032746345a51e0f55ffb3
+checksum=ea2424fb4c02916c0c531210f1dd8b460e85074f2d8ca0529d49553d36dd13c0
 
 lib32disabled=yes
 
@@ -30,11 +30,10 @@ makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
  libXrender-devel libXcomposite-devel libSM-devel libXt-devel rust-std
  libXdamage-devel freetype-devel $(vopt_if wasi wasi-sdk)
  $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
- $(vopt_if pulseaudio pulseaudio-devel) $(vopt_if xscreensaver libXScrnSaver-devel)
- $(vopt_if sndio sndio-devel) $(vopt_if jack jack-devel)"
+ $(vopt_if pulseaudio pulseaudio-devel)"
 depends="nss>=3.129 nspr>=4.39 desktop-file-utils hicolor-icon-theme pciutils"
 
-build_options="alsa jack dbus pulseaudio xscreensaver sndio lto pgo clang wasi debug"
+build_options="alsa dbus pulseaudio lto pgo clang wasi debug"
 build_options_default="alsa dbus pulseaudio lto pgo clang wasi"
 
 desc_option_lto="Enable Link Time Optimization"
@@ -69,8 +68,8 @@ do_build() {
 	export AS="${CC}"
 	# Target-specific build: Intel Skylake (i3-6100U / Core i3-6100-class).
 	# This package is intentionally not portable to pre-Skylake x86_64 CPUs.
-	export CFLAGS="${CFLAGS:-} -O2 -march=skylake -mtune=skylake"
-	export CXXFLAGS="${CXXFLAGS:-} -O2 -march=skylake -mtune=skylake"
+	export CFLAGS="${CFLAGS:-} -O2 -march=skylake"
+	export CXXFLAGS="${CXXFLAGS:-} -O2 -march=skylake"
 	export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=skylake"
 	export RUSTC_OPT_LEVEL=2
 	export RUSTC_WRAPPER=/usr/bin/sccache
@@ -166,9 +165,7 @@ do_build() {
 	ac_add_options $(vopt_enable dbus necko-wifi)
 	ac_add_options --disable-audio-backends
 	ac_add_options $(vopt_enable alsa)
-	ac_add_options $(vopt_enable jack)
 	ac_add_options $(vopt_enable pulseaudio)
-	ac_add_options $(vopt_enable sndio)
 	ac_add_options --enable-default-toolkit=cairo-gtk3-wayland
 
 	mk_add_options MOZ_OBJDIR="${wrksrc}/obj"
@@ -206,8 +203,6 @@ do_build() {
 	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
 
 	rm -f old-configure
-
-
 
 	if [ "$build_option_pgo" ]; then
 		pgo_profile_path=/host/pgo-cache/merged.profdata

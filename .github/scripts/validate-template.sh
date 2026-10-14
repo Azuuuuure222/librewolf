@@ -19,17 +19,20 @@ distfiles=$(sed -n 's/^distfiles="//p' "$template" | sed 's/"$//')
   exit 1
 }
 
-case "$version" in
-  ''|*[!0-9.]*) echo "invalid LibreWolf version: $version" >&2; exit 1 ;;
-esac
+[[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || {
+  echo "invalid LibreWolf version: $version" >&2
+  exit 1
+}
 
-case "$revision" in
-  ''|0|*[!0-9]*) echo "revision must be a positive integer: $revision" >&2; exit 1 ;;
-esac
+[[ "$revision" =~ ^[1-9][0-9]*$ ]] || {
+  echo "revision must be a positive integer: $revision" >&2
+  exit 1
+}
 
-case "$_rev" in
-  ''|*[!0-9]*) echo "_rev must be a non-negative integer: $_rev" >&2; exit 1 ;;
-esac
+[[ "$_rev" =~ ^[0-9]+$ ]] || {
+  echo "_rev must be a non-negative integer: $_rev" >&2
+  exit 1
+}
 
 printf '%s\n' "$checksum" | grep -Eq '^[0-9A-Fa-f]{64}$' || {
   echo "template checksum must be exactly one 64-character SHA-256 digest" >&2
@@ -68,6 +71,11 @@ esac
 
 distfile="$expected_distfile"
 release_tag="${version}-${_rev}"
+# Keep upstream source tags recognizable for revision 1. Packaging-only revisions
+# get their own immutable release tag instead of replacing older artifacts.
+if [ "$revision" -gt 1 ]; then
+  release_tag+="-r${revision}"
+fi
 
 if [ -n "$GITHUB_OUTPUT" ]; then
   {

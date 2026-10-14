@@ -25,7 +25,7 @@ jobs:
       XBPS_TARGET_ARCH: x86_64-musl
       SCCACHE_GHA_ENABLED: "on"
       SCCACHE_GHA_VERSION: "librewolf-x86_64-musl-skylake-v1"
-      LIBREWOLF_PGO_CACHE_VERSION: "v3"
+      LIBREWOLF_PGO_CACHE_VERSION: "v4"
     steps:
       - name: free space
         run: |
@@ -84,7 +84,7 @@ jobs:
           path: void-packages/hostdir/pgo-cache
           # PGO validity follows source + downstream patches + this explicit version.
           # Bump LIBREWOLF_PGO_CACHE_VERSION when profile-relevant build/workload inputs change.
-          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/patches/**') }}
+          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', '.github/workflows/main.yml') }}
 
       - name: prepare xbps-static
         run: |
@@ -192,15 +192,24 @@ jobs:
           distfile="${srcdir}/${DISTFILE}"
           mkdir -p "$srcdir"
 
-          if [ "${{ steps.source-cache.outputs.cache-hit }}" = "true" ]; then
+          cache_valid=false
+          if [ "${{ steps.source-cache.outputs.cache-hit }}" = "true" ] && [ -s "$distfile" ]; then
             echo "LibreWolf source cache hit; verifying cached archive..."
-            printf '%s  %s\n' "$SHA256" "$distfile" | sha256sum --check --status -
-          else
-            echo "LibreWolf source cache miss; fetching through xbps-src..."
-            ./xbps-src -A "$XBPS_TARGET_ARCH" fetch librewolf
-            test -s "$distfile"
-            printf '%s  %s\n' "$SHA256" "$distfile" | sha256sum --check --status -
+            if printf '%s  %s\n' "$SHA256" "$distfile" | sha256sum --check --status -; then
+              cache_valid=true
+            else
+              echo "Cached source failed SHA-256 verification; refetching." >&2
+            fi
           fi
+
+          if [ "$cache_valid" != "true" ]; then
+            rm -f -- "$distfile"
+            echo "Fetching LibreWolf source through xbps-src..."
+            ./xbps-src -A "$XBPS_TARGET_ARCH" fetch librewolf
+          fi
+
+          test -s "$distfile"
+          printf '%s  %s\n' "$SHA256" "$distfile" | sha256sum --check -
 
       - name: save LibreWolf source
         if: ${{ steps.source-cache.outputs.cache-hit != 'true' }}
@@ -251,11 +260,11 @@ jobs:
           ./xbps-src -A "$XBPS_TARGET_ARCH" pkg -j"$(nproc)" librewolf
 
       - name: save LibreWolf PGO profile
-        if: ${{ always() && steps.pgo-cache.outputs.cache-hit != 'true' && hashFiles('void-packages/hostdir/pgo-cache/merged.profdata', 'void-packages/hostdir/pgo-cache/jarlog') != '' }}
+        if: ${{ always() && steps.pgo-cache.outputs.cache-hit != 'true' && hashFiles('void-packages/hostdir/pgo-cache/merged.profdata') != '' && hashFiles('void-packages/hostdir/pgo-cache/jarlog') != '' }}
         uses: actions/cache/save@v6
         with:
           path: void-packages/hostdir/pgo-cache
-          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/patches/**') }}
+          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', '.github/workflows/main.yml') }}
 
       - name: remove sccache credentials
         if: ${{ always() }}
@@ -281,10 +290,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.release_tag }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           gh auth setup-git
-          git push --force origin "HEAD:refs/tags/$TAG"
+
+          # Published version tags are immutable; do not retarget existing releases.
+          if existing_tag_sha="$(git ls-remote --exit-code origin "refs/tags/$TAG" | awk 'NR == 1 {print $1}')"; then
+            if [ "$existing_tag_sha" != "$EXPECTED_SHA" ]; then
+              echo "Refusing to overwrite tag $TAG: it points to $existing_tag_sha, expected $EXPECTED_SHA." >&2
+              exit 1
+            fi
+            echo "Tag $TAG already points to this commit."
+          else
+            git push origin "$EXPECTED_SHA:refs/tags/$TAG"
+          fi
 
       - name: create release
         env:
@@ -305,9 +325,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.meta.outputs.release_tag }}
         run: |
           set -euo pipefail
-          gh release upload "${{ steps.meta.outputs.release_tag }}" *.xbps *-repodata --clobber
+
+          # Keep already-published assets intact on retry.
+          existing_assets="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          for asset in *.xbps *-repodata; do
+            [ -f "$asset" ] || continue
+            if printf '%s\n' "$existing_assets" | grep -Fxq -- "$asset"; then
+              echo "Keeping existing release asset: $asset"
+            else
+              gh release upload "$TAG" "$asset"
+            fi
+          done
 
       - name: mark release latest
         env:
