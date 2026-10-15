@@ -2,6 +2,10 @@
 
 Personal, hardware-specific LibreWolf packaging for one real deployment target — the **target device** described below.
 
+## Repository workflow rule
+
+All repository changes must be committed directly to `master`. Do not create feature branches or pull requests for routine changes unless explicitly instructed otherwise. Apply this rule to future maintenance, fixes, and optimization work.
+
 ## Target device specifications
 
 This package is built specifically for this target device:
