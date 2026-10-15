@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - 'fix/**'
     paths:
       - srcpkgs/librewolf/**
       - .github/workflows/main.yml
@@ -12,20 +13,25 @@ on:
 
 concurrency:
   group: librewolf-${{ github.ref }}
-  cancel-in-progress: true
+  # Finish the active expensive build; newer pushes replace the single pending run.
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      version: ${{ steps.meta.outputs.version }}
+      rev: ${{ steps.meta.outputs.rev }}
     runs-on: ${{ vars.LIBREWOLF_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 360
     env:
       XBPS_TARGET_ARCH: x86_64-musl
       SCCACHE_GHA_ENABLED: "on"
       SCCACHE_GHA_VERSION: "librewolf-x86_64-musl-skylake-v1"
-      LIBREWOLF_PGO_CACHE_VERSION: "v6"
+      LIBREWOLF_PGO_CACHE_VERSION: "v7"
     steps:
       - name: free space
         run: |
@@ -75,7 +81,7 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          bash -n .github/scripts/pgo-runtime.sh
+          bash -n .github/scripts/validate-template.sh
           bash .github/scripts/validate-template.sh srcpkgs/librewolf/template
 
       - name: restore LibreWolf PGO profile
@@ -85,7 +91,7 @@ jobs:
           path: void-packages/hostdir/pgo-cache
           # PGO validity follows source + downstream patches + this explicit version.
           # Bump LIBREWOLF_PGO_CACHE_VERSION when profile-relevant build/workload inputs change.
-          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', '.github/scripts/pgo-runtime.sh', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', 'srcpkgs/librewolf/files/stab.h', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/cargo/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: prepare xbps-static
         run: |
@@ -97,15 +103,6 @@ jobs:
             https://repo-default.voidlinux.org/static/xbps-static-latest.x86_64-musl.tar.xz
           tar -xJf xbps-static-latest.x86_64-musl.tar.xz -C /opt/xbps
           rm -f xbps-static-latest.x86_64-musl.tar.xz
-
-      - name: install PGO Wayland compositor
-        if: ${{ steps.pgo-cache.outputs.cache-hit != 'true' }}
-        run: |
-          set -euo pipefail
-          if ! command -v sway >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends sway
-          fi
 
       - name: allow xbps user namespaces
         run: |
@@ -171,7 +168,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: void-packages/hostdir/sources/librewolf-${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.distfile }}
-          key: librewolf-source-v4-${{ steps.meta.outputs.sha256 }}
+          key: librewolf-source-v5-${{ steps.meta.outputs.sha256 }}
 
       - name: fetch and verify LibreWolf source
         timeout-minutes: 20
@@ -212,25 +209,33 @@ jobs:
         continue-on-error: true
         with:
           path: void-packages/hostdir/sources/librewolf-${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.distfile }}
-          key: librewolf-source-v4-${{ steps.meta.outputs.sha256 }}
+          key: librewolf-source-v5-${{ steps.meta.outputs.sha256 }}
 
       - name: build package
+        id: package-build
         timeout-minutes: 350
         working-directory: void-packages
-        env:
-          PGO_CACHE_HIT: ${{ steps.pgo-cache.outputs.cache-hit }}
         run: |
           set -euo pipefail
           export PATH="/opt/xbps/usr/bin/:$PATH"
 
-          if [ "$PGO_CACHE_HIT" != "true" ]; then
-            # Keep the compositor alive across xbps-src's complete PGO build.
-            source "$GITHUB_WORKSPACE/.github/scripts/pgo-runtime.sh"
-            PGO_RUNTIME_DIR="$PWD/hostdir/pgo-runtime"
-            pgo_runtime_start
+          # Reserve 2 GiB for the OS/linker overhead and budget about 3 GiB per worker.
+          cpu_jobs="$(nproc)"
+          available_kib="$(awk '/^MemAvailable:/ { print $2; exit }' /proc/meminfo)"
+          reserved_kib=$((2 * 1024 * 1024))
+          per_job_kib=$((3 * 1024 * 1024))
+          if [ "$available_kib" -gt "$reserved_kib" ]; then
+            memory_jobs=$(((available_kib - reserved_kib) / per_job_kib))
+          else
+            memory_jobs=1
           fi
+          [ "$memory_jobs" -ge 1 ] || memory_jobs=1
+          build_jobs="$cpu_jobs"
+          [ "$memory_jobs" -ge "$build_jobs" ] || build_jobs="$memory_jobs"
 
-          ./xbps-src -A "$XBPS_TARGET_ARCH" pkg -j"$(nproc)" librewolf
+          echo "Build parallelism: $build_jobs jobs ($cpu_jobs CPUs, $((available_kib / 1024)) MiB available RAM)."
+          echo "jobs=$build_jobs" >> "$GITHUB_OUTPUT"
+          ./xbps-src -A "$XBPS_TARGET_ARCH" pkg -j"$build_jobs" librewolf
 
       - name: save LibreWolf PGO profile
         if: ${{ always() && steps.pgo-cache.outputs.cache-hit != 'true' && hashFiles('void-packages/hostdir/pgo-cache/merged.profdata') != '' && hashFiles('void-packages/hostdir/pgo-cache/jarlog') != '' }}
@@ -238,7 +243,7 @@ jobs:
         continue-on-error: true
         with:
           path: void-packages/hostdir/pgo-cache
-          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', '.github/scripts/pgo-runtime.sh', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', 'srcpkgs/librewolf/files/stab.h', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/cargo/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: save Void binary package cache
         if: ${{ always() && !cancelled() && steps.xbps-cache.outputs.cache-hit != 'true' }}
@@ -265,13 +270,44 @@ jobs:
             echo "no repository metadata was produced" >&2
             exit 1
           }
-          sha256sum -- *.xbps *-repodata
-          sha512sum -- *.xbps *-repodata
+          sha256sum -- *.xbps *-repodata | tee SHA256SUMS
+          sha512sum -- *.xbps *-repodata | tee SHA512SUMS
+
+      - name: upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: librewolf-packages
+          path: |
+            void-packages/hostdir/binpkgs/*.xbps
+            void-packages/hostdir/binpkgs/*-repodata
+            void-packages/hostdir/binpkgs/SHA256SUMS
+            void-packages/hostdir/binpkgs/SHA512SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    if: ${{ github.ref == 'refs/heads/master' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: download release bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: librewolf-packages
+          path: binpkgs
 
       - name: publish release tag
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.meta.outputs.release_tag }}
+          TAG: ${{ needs.build.outputs.release_tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -291,9 +327,9 @@ jobs:
       - name: create release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.meta.outputs.release_tag }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          REV: ${{ steps.meta.outputs.rev }}
+          TAG: ${{ needs.build.outputs.release_tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          REV: ${{ needs.build.outputs.rev }}
         run: |
           set -euo pipefail
           gh release view "$TAG" >/dev/null 2>&1 && exit 0
@@ -303,20 +339,36 @@ jobs:
             --latest=false
 
       - name: upload release assets
-        working-directory: void-packages/hostdir/binpkgs/
+        working-directory: binpkgs
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ steps.meta.outputs.release_tag }}
+          TAG: ${{ needs.build.outputs.release_tag }}
         run: |
           set -euo pipefail
 
-          # Keep already-published assets intact on retry.
+          # Preserve existing release assets only if their bytes match this build.
           existing_assets="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
-          for asset in *.xbps *-repodata; do
+          remote_asset_digests="$(gh api "repos/$GH_REPO/releases/tags/$TAG" --jq '.assets[] | [.name, (.digest // "")] | @tsv')"
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$verify_dir"' EXIT
+
+          for asset in *.xbps *-repodata SHA256SUMS SHA512SUMS; do
             [ -f "$asset" ] || continue
             if printf '%s\n' "$existing_assets" | grep -Fxq -- "$asset"; then
-              echo "Keeping existing release asset: $asset"
+              expected_digest="sha256:$(sha256sum -- "$asset" | awk '{print $1}')"
+              actual_digest="$(printf '%s\n' "$remote_asset_digests" | awk -F '\t' -v name="$asset" '$1 == name {print $2; exit}')"
+              if [ -z "$actual_digest" ]; then
+                # Older GitHub assets may not expose a server-side digest.
+                gh release download "$TAG" --dir "$verify_dir" --pattern "$asset"
+                actual_digest="sha256:$(sha256sum -- "$verify_dir/$asset" | awk '{print $1}')"
+                rm -f -- "$verify_dir/$asset"
+              fi
+              if [ "$actual_digest" != "$expected_digest" ]; then
+                echo "Refusing to reuse $asset: published digest $actual_digest differs from this build $expected_digest." >&2
+                exit 1
+              fi
+              echo "Verified existing release asset: $asset"
             else
               gh release upload "$TAG" "$asset"
             fi
@@ -328,4 +380,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh release edit "${{ steps.meta.outputs.release_tag }}" --latest
+          gh release edit "${{ needs.build.outputs.release_tag }}" --latest

@@ -23,7 +23,7 @@ esac
 _llvmver=22
 hostmakedepends="unzip zip pkg-config perl python3 yasm rust
  cargo rust-sccache llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which
- tar xz $(vopt_if pgo 'dbus mesa-dri vulkan-loader pciutils')
+ tar xz $(vopt_if pgo 'dbus')
  $(vopt_if wasi wasi-sdk)"
 makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
  pixman-devel libevent-devel libnotify-devel libwebp-devel
@@ -31,7 +31,7 @@ makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
  libXdamage-devel freetype-devel $(vopt_if wasi wasi-sdk)
  $(vopt_if alsa alsa-lib-devel) $(vopt_if dbus dbus-glib-devel)
  $(vopt_if pulseaudio pulseaudio-devel)"
-depends="nss>=3.129 nspr>=4.39 desktop-file-utils hicolor-icon-theme pciutils"
+depends="nss>=3.129 nspr>=4.39 desktop-file-utils hicolor-icon-theme pciutils libavcodec6"
 
 build_options="alsa dbus pulseaudio lto pgo clang wasi debug"
 build_options_default="alsa dbus pulseaudio lto pgo clang wasi"
@@ -208,39 +208,57 @@ do_build() {
 		pgo_profile_path=/host/pgo-cache/merged.profdata
 		pgo_jarlog_path=/host/pgo-cache/jarlog
 		cp mozconfig{,.orig}
-		if [ -s "$pgo_profile_path" ] && [ -s "$pgo_jarlog_path" ]; then
-			echo "Using cached LibreWolf PGO profile."
+
+		pgo_profile_is_valid() {
+			[ -s "$pgo_profile_path" ] &&
+			[ -s "$pgo_jarlog_path" ] &&
+				timeout --foreground 60s llvm-profdata show "$pgo_profile_path" >/dev/null 2>&1
+		}
+
+		if pgo_profile_is_valid; then
+			echo "Using verified cached LibreWolf PGO profile."
 		else
-			echo "Generating LibreWolf PGO profile."
+			echo "PGO profile is missing or invalid; generating a fresh profile."
+			rm -f -- "$pgo_profile_path" "$pgo_jarlog_path"
 			sed -i '\;ac_add_options --enable-lto=;d' mozconfig
 			echo "ac_add_options --enable-profile-generate=cross" >> mozconfig
 
 			./mach build
 			./mach package
 
-			test -f /host/pgo-runtime/wayland-required
-			test -S /host/pgo-runtime/wayland-1
-			# Hosted runners have no GPU render node; use deterministic software GL for PGO.
+			# Native headless mode avoids a synthetic Wayland seat on hosted runners.
+			# A fixed viewport keeps layout workload coverage without Xwayland or a GPU.
 			LLVM_PROFDATA=llvm-profdata \
 			JARLOG_FILE="$PWD/jarlog" \
-			GDK_BACKEND=wayland \
-			WAYLAND_DISPLAY=wayland-1 \
-			XDG_RUNTIME_DIR=/host/pgo-runtime \
-			MOZ_ENABLE_WAYLAND=1 \
-			LIBGL_ALWAYS_SOFTWARE=1 \
+			MOZ_HEADLESS=1 \
+			MOZ_HEADLESS_WIDTH=1366 \
+			MOZ_HEADLESS_HEIGHT=768 \
 			LD_LIBRARY_PATH="$PWD/obj/dist/librewolf" \
 				timeout --foreground 30m \
-				dbus-run-session -- ./mach python build/pgo/profileserver.py
+				dbus-run-session -- env \
+					-u DISPLAY \
+					-u WAYLAND_DISPLAY \
+					-u GDK_BACKEND \
+					-u XDG_RUNTIME_DIR \
+					-u MOZ_ENABLE_WAYLAND \
+					-u LIBGL_ALWAYS_SOFTWARE \
+					./mach python build/pgo/profileserver.py
 
 			test -s merged.profdata
 			test -s jarlog
+			timeout --foreground 60s llvm-profdata show merged.profdata >/dev/null 2>&1 || {
+				echo "Generated PGO profile is not a readable LLVM profile." >&2
+				exit 1
+			}
 			mkdir -p /host/pgo-cache
 			cp merged.profdata "$pgo_profile_path"
 			cp jarlog "$pgo_jarlog_path"
 		fi
 
-		test -s "$pgo_profile_path"
-		test -s "$pgo_jarlog_path"
+		pgo_profile_is_valid || {
+			echo "PGO profile validation failed; refusing to build with an invalid profile." >&2
+			exit 1
+		}
 		./mach clobber objdir
 
 		cp mozconfig{.orig,}
@@ -252,7 +270,7 @@ do_build() {
 	fi
 
 	if [ "$build_option_clang" ] && [ "$build_option_lto" ]; then
-		lto_jobs="$(nproc)"
+		lto_jobs="${makejobs:-$(nproc)}"
 		export LDFLAGS+=" -Wl,--threads=${lto_jobs} -Wl,--lto-O2"
 		export LDFLAGS+=" -Wl,--lto-partitions=${lto_jobs}"
 	fi
