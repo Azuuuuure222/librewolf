@@ -25,7 +25,7 @@ jobs:
       XBPS_TARGET_ARCH: x86_64-musl
       SCCACHE_GHA_ENABLED: "on"
       SCCACHE_GHA_VERSION: "librewolf-x86_64-musl-skylake-v1"
-      LIBREWOLF_PGO_CACHE_VERSION: "v5"
+      LIBREWOLF_PGO_CACHE_VERSION: "v6"
     steps:
       - name: free space
         run: |
@@ -75,6 +75,7 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
+          bash -n .github/scripts/pgo-runtime.sh
           bash .github/scripts/validate-template.sh srcpkgs/librewolf/template
 
       - name: restore LibreWolf PGO profile
@@ -84,7 +85,7 @@ jobs:
           path: void-packages/hostdir/pgo-cache
           # PGO validity follows source + downstream patches + this explicit version.
           # Bump LIBREWOLF_PGO_CACHE_VERSION when profile-relevant build/workload inputs change.
-          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', '.github/workflows/main.yml', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', '.github/scripts/pgo-runtime.sh', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: prepare xbps-static
         run: |
@@ -116,7 +117,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: void-packages/hostdir/repocache-${{ env.XBPS_TARGET_ARCH }}
-          key: void-repocache-v1-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: void-repocache-v2-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: bootstrap xbps-src
         timeout-minutes: 15
@@ -126,12 +127,6 @@ jobs:
           export PATH="/opt/xbps/usr/bin/:$PATH"
           ./xbps-src -A "$XBPS_TARGET_ARCH" binary-bootstrap
 
-      - name: save Void binary package cache
-        if: ${{ steps.xbps-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v6
-        with:
-          path: void-packages/hostdir/repocache-${{ env.XBPS_TARGET_ARCH }}
-          key: void-repocache-v1-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: prepare sccache environment
         uses: actions/github-script@v9
@@ -214,6 +209,7 @@ jobs:
       - name: save LibreWolf source
         if: ${{ steps.source-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v6
+        continue-on-error: true
         with:
           path: void-packages/hostdir/sources/librewolf-${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.distfile }}
           key: librewolf-source-v4-${{ steps.meta.outputs.sha256 }}
@@ -228,69 +224,10 @@ jobs:
           export PATH="/opt/xbps/usr/bin/:$PATH"
 
           if [ "$PGO_CACHE_HIT" != "true" ]; then
-            pgo_runtime_dir="$PWD/hostdir/pgo-runtime"
-            rm -rf "$pgo_runtime_dir"
-            mkdir -p "$pgo_runtime_dir"
-            chmod 700 "$pgo_runtime_dir"
-
-            sway_pid=""
-            sway_log="$pgo_runtime_dir/sway.log"
-            cleanup_sway() {
-              local status=$?
-              trap - EXIT
-              if [ -n "$sway_pid" ]; then
-                kill "$sway_pid" >/dev/null 2>&1 || true
-                wait "$sway_pid" >/dev/null 2>&1 || true
-              fi
-              if [ "$status" -ne 0 ] && [ -s "$sway_log" ]; then
-                echo "Sway log (PGO compositor startup/runtime):" >&2
-                cat "$sway_log" >&2
-              fi
-              rm -rf "$pgo_runtime_dir"
-              exit "$status"
-            }
-            trap cleanup_sway EXIT
-
-            printf '%s\n' \
-              'output * mode 1366x768' \
-              'default_border none' \
-              'default_floating_border none' \
-              >"$pgo_runtime_dir/sway.conf"
-
-            # Weston 13's headless backend creates no wl_seat, which leaves GTK3
-            # without a keyboard seat during profileserver.py. Sway/wlroots
-            # supplies a seat even with no physical input devices. Pixman keeps
-            # the compositor deterministic on GPU-less hosted runners.
-            export XDG_RUNTIME_DIR="$pgo_runtime_dir"
-            export WAYLAND_DISPLAY=wayland-1
-            export XDG_CURRENT_DESKTOP=sway
-            export XDG_SESSION_TYPE=wayland
-            export WLR_BACKENDS=headless
-            export WLR_RENDERER=pixman
-            export WLR_LIBINPUT_NO_DEVICES=1
-            export WLR_HEADLESS_OUTPUTS=1
-            export WLR_NO_HARDWARE_CURSORS=1
-            unset DISPLAY
-
-            sway --config "$pgo_runtime_dir/sway.conf" --verbose \
-              >"$sway_log" 2>&1 &
-            sway_pid=$!
-
-            for _ in $(seq 1 100); do
-              if ! kill -0 "$sway_pid" 2>/dev/null; then
-                echo "Sway exited before its Wayland socket became ready." >&2
-                cat "$sway_log" >&2
-                exit 1
-              fi
-              if [ -S "$pgo_runtime_dir/$WAYLAND_DISPLAY" ] &&
-                 swaymsg -s "$pgo_runtime_dir/$WAYLAND_DISPLAY" -t get_version >/dev/null 2>&1; then
-                break
-              fi
-              sleep 0.1
-            done
-            test -S "$pgo_runtime_dir/$WAYLAND_DISPLAY"
-            swaymsg -s "$pgo_runtime_dir/$WAYLAND_DISPLAY" -t get_version >/dev/null
-            : >"$pgo_runtime_dir/wayland-required"
+            # Keep the compositor alive across xbps-src's complete PGO build.
+            source "$GITHUB_WORKSPACE/.github/scripts/pgo-runtime.sh"
+            PGO_RUNTIME_DIR="$PWD/hostdir/pgo-runtime"
+            pgo_runtime_start
           fi
 
           ./xbps-src -A "$XBPS_TARGET_ARCH" pkg -j"$(nproc)" librewolf
@@ -298,9 +235,18 @@ jobs:
       - name: save LibreWolf PGO profile
         if: ${{ always() && steps.pgo-cache.outputs.cache-hit != 'true' && hashFiles('void-packages/hostdir/pgo-cache/merged.profdata') != '' && hashFiles('void-packages/hostdir/pgo-cache/jarlog') != '' }}
         uses: actions/cache/save@v6
+        continue-on-error: true
         with:
           path: void-packages/hostdir/pgo-cache
-          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', '.github/workflows/main.yml', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', '.github/scripts/pgo-runtime.sh', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
+
+      - name: save Void binary package cache
+        if: ${{ always() && !cancelled() && steps.xbps-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        continue-on-error: true
+        with:
+          path: void-packages/hostdir/repocache-${{ env.XBPS_TARGET_ARCH }}
+          key: void-repocache-v2-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: remove sccache credentials
         if: ${{ always() }}

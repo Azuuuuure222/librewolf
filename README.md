@@ -241,14 +241,14 @@ merged.profdata
 jarlog
 ```
 
-The PGO cache key includes the verified LibreWolf source SHA-256, package template, downstream patches, build workflow, and relevant Void templates for LLVM, Rust, WASI SDK, sccache, and the base chroot. The namespace is bumped to `v5` for this broader toolchain identity.
+The PGO cache key includes the verified LibreWolf source SHA-256, package template, downstream patches, the dedicated `.github/scripts/pgo-runtime.sh` workload environment, and relevant Void templates for LLVM, Rust, WASI SDK, sccache, and the base chroot. The namespace is `v6` after replacing the seatless Weston setup and separating profile inputs from unrelated CI logic.
 
-This prevents profiles from being reused after recipe, patch, workflow, or toolchain-recipe changes. Bump `LIBREWOLF_PGO_CACHE_VERSION` for workload/schema changes not represented by those files.
+This means editing release publishing, checkout, or cache housekeeping no longer invalidates an expensive PGO profile. Profile-affecting changes to the template, patches, compositor script, or toolchain templates change the key; bump `LIBREWOLF_PGO_CACHE_VERSION` for workload/schema changes not represented by those files.
 
 The intent is:
 
 ```text
-same source + same template + same patches + same workflow + same PGO cache version
+same source + same template + same patches + same PGO runtime script + same toolchain templates
         |
         +--> reuse PGO profile
         |
@@ -372,7 +372,7 @@ This primarily reduces repeated:
 - dependency repository traffic
 - dependency installation/setup work
 
-The cache is keyed from the xbps-src/bootstrap inputs rather than tied to the LibreWolf source archive.
+The cache is keyed from the xbps-src/bootstrap inputs rather than tied to the LibreWolf source archive. It is saved after the package build, not immediately after bootstrap, so downloaded compiler and build dependencies are included. Cache writes are best-effort and cannot turn a successful package build into a failure.
 
 The intended result for repeated builds is:
 
@@ -457,8 +457,6 @@ prepare static xbps
         v
 bootstrap xbps-src
         |
-        +--> save Void package cache
-        |
         v
 prepare sccache runtime
         |
@@ -473,6 +471,9 @@ build package
         |
         v
 save PGO profile if newly generated
+        |
+        v
+save Void package cache if it missed
         |
         v
 checksum packages/repository metadata
