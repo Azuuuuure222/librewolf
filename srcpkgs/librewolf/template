@@ -220,13 +220,13 @@ do_build() {
 
 			test -f /host/pgo-runtime/wayland-required
 			test -S /host/pgo-runtime/wayland-1
+			# Hosted runners have no GPU render node; use deterministic software GL for PGO.
 			LLVM_PROFDATA=llvm-profdata \
 			JARLOG_FILE="$PWD/jarlog" \
 			GDK_BACKEND=wayland \
 			WAYLAND_DISPLAY=wayland-1 \
 			XDG_RUNTIME_DIR=/host/pgo-runtime \
 			MOZ_ENABLE_WAYLAND=1 \
-			# Hosted runners have no GPU render node; use deterministic software GL for PGO. \
 			LIBGL_ALWAYS_SOFTWARE=1 \
 			LD_LIBRARY_PATH="$PWD/obj/dist/librewolf" \
 				timeout --foreground 30m \

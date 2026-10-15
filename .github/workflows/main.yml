@@ -251,11 +251,11 @@ jobs:
             }
             trap cleanup_sway EXIT
 
-            cat >"$pgo_runtime_dir/sway.conf" <<'EOF'
-            output * mode 1366x768
-            default_border none
-            default_floating_border none
-            EOF
+            printf '%s\n' \
+              'output * mode 1366x768' \
+              'default_border none' \
+              'default_floating_border none' \
+              >"$pgo_runtime_dir/sway.conf"
 
             # Weston 13's headless backend creates no wl_seat, which leaves GTK3
             # without a keyboard seat during profileserver.py. Sway/wlroots
