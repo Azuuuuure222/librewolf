@@ -497,6 +497,7 @@ upload XBPS artifacts
 It currently checks:
 
 - template syntax with `bash -n`
+- PGO runtime helper syntax with `bash -n`
 - expected package name
 - LibreWolf version syntax
 - positive Void package revision
@@ -749,6 +750,7 @@ The source cache therefore remains an optimization only; it is not treated as an
 ```text
 .github/
 ├── scripts/
+│   ├── pgo-runtime.sh
 │   └── validate-template.sh
 └── workflows/
     └── main.yml
