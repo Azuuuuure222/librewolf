@@ -1,7 +1,7 @@
 # Template file for 'librewolf'
 pkgname=librewolf
 version=158.0
-revision=1
+revision=2
 _rev=1
 wrksrc=${pkgname}-${version}-${_rev}
 build_helper="rust"
@@ -270,7 +270,13 @@ do_build() {
 	fi
 
 	if [ "$build_option_clang" ] && [ "$build_option_lto" ]; then
-		lto_jobs="${makejobs:-$(nproc)}"
+		# Void exposes makejobs as -jN; LLD requires a numeric worker count.
+		if [[ "${makejobs:-}" =~ -j[[:space:]]*([1-9][0-9]*) ]]; then
+			lto_jobs="${BASH_REMATCH[1]}"
+		else
+			lto_jobs="$(nproc)"
+		fi
+		echo "LLD LTO parallelism: ${lto_jobs} workers."
 		export LDFLAGS+=" -Wl,--threads=${lto_jobs} -Wl,--lto-O2"
 		export LDFLAGS+=" -Wl,--lto-partitions=${lto_jobs}"
 	fi
