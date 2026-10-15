@@ -194,7 +194,7 @@ The project intentionally uses PGO because this is a real target-specific build 
 
 On a profile-cache miss, CI:
 
-1. starts a headless Weston compositor on the GitHub runner
+1. starts a headless Sway compositor with a Wayland seat on the GitHub runner
 2. exposes the compositor socket through xbps-src's `/host` bind mount
 3. performs the instrumented LibreWolf build
 4. runs the Firefox/LibreWolf PGO workload against **Wayland**
@@ -210,7 +210,7 @@ The relevant runtime path is:
 ```text
 GitHub runner
     |
-    +-- Weston headless compositor
+    +-- Sway/wlroots headless compositor (pixman renderer, virtual seat)
     |
     +-- void-packages/hostdir/pgo-runtime
                  |
@@ -222,7 +222,7 @@ GitHub runner
                            LibreWolf PGO workload
 ```
 
-This matters because the package itself is built inside the xbps chroot while Weston is installed and run by the outer GitHub Actions environment.
+This matters because the package itself is built inside the xbps chroot while Sway is installed and run by the outer GitHub Actions environment.
 
 ## CI PGO workload
 
@@ -452,7 +452,7 @@ validate template
         v
 prepare static xbps
         |
-        +--> install Weston only on PGO-cache miss
+        +--> install Sway only on PGO-cache miss
         |
         v
 bootstrap xbps-src
@@ -871,11 +871,11 @@ The workflow now uses `actions/github-script` to retrieve the runtime values and
 
 ## PGO/Wayland needed to cross the xbps boundary
 
-The runner's Weston process was outside the package build chroot.
+The runner's Sway process was outside the package build chroot.
 
 ### Fix
 
-Weston writes its runtime socket into the xbps hostdir bind mount:
+Sway writes its runtime socket into the xbps hostdir bind mount.
 
 ```text
 hostdir/pgo-runtime

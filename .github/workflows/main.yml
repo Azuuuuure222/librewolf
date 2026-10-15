@@ -101,9 +101,9 @@ jobs:
         if: ${{ steps.pgo-cache.outputs.cache-hit != 'true' }}
         run: |
           set -euo pipefail
-          if ! command -v weston >/dev/null 2>&1; then
+          if ! command -v sway >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends weston
+            sudo apt-get install -y --no-install-recommends sway
           fi
 
       - name: allow xbps user namespaces
@@ -233,27 +233,63 @@ jobs:
             mkdir -p "$pgo_runtime_dir"
             chmod 700 "$pgo_runtime_dir"
 
-            weston_pid=""
-            cleanup_weston() {
-              if [ -n "$weston_pid" ]; then
-                kill "$weston_pid" >/dev/null 2>&1 || true
-                wait "$weston_pid" >/dev/null 2>&1 || true
+            sway_pid=""
+            sway_log="$pgo_runtime_dir/sway.log"
+            cleanup_sway() {
+              local status=$?
+              trap - EXIT
+              if [ -n "$sway_pid" ]; then
+                kill "$sway_pid" >/dev/null 2>&1 || true
+                wait "$sway_pid" >/dev/null 2>&1 || true
+              fi
+              if [ "$status" -ne 0 ] && [ -s "$sway_log" ]; then
+                echo "Sway log (PGO compositor startup/runtime):" >&2
+                cat "$sway_log" >&2
               fi
               rm -rf "$pgo_runtime_dir"
+              exit "$status"
             }
-            trap cleanup_weston EXIT
+            trap cleanup_sway EXIT
 
-            XDG_RUNTIME_DIR="$pgo_runtime_dir" \
-              weston --backend=headless-backend.so --socket=wayland-1 \
-              --idle-time=0 --width=1920 --height=1080 \
-              >"$pgo_runtime_dir/weston.log" 2>&1 &
-            weston_pid=$!
+            cat >"$pgo_runtime_dir/sway.conf" <<'EOF'
+            output * mode 1366x768
+            default_border none
+            default_floating_border none
+            EOF
+
+            # Weston 13's headless backend creates no wl_seat, which leaves GTK3
+            # without a keyboard seat during profileserver.py. Sway/wlroots
+            # supplies a seat even with no physical input devices. Pixman keeps
+            # the compositor deterministic on GPU-less hosted runners.
+            export XDG_RUNTIME_DIR="$pgo_runtime_dir"
+            export WAYLAND_DISPLAY=wayland-1
+            export XDG_CURRENT_DESKTOP=sway
+            export XDG_SESSION_TYPE=wayland
+            export WLR_BACKENDS=headless
+            export WLR_RENDERER=pixman
+            export WLR_LIBINPUT_NO_DEVICES=1
+            export WLR_HEADLESS_OUTPUTS=1
+            export WLR_NO_HARDWARE_CURSORS=1
+            unset DISPLAY
+
+            sway --config "$pgo_runtime_dir/sway.conf" --verbose \
+              >"$sway_log" 2>&1 &
+            sway_pid=$!
 
             for _ in $(seq 1 100); do
-              [ -S "$pgo_runtime_dir/wayland-1" ] && break
+              if ! kill -0 "$sway_pid" 2>/dev/null; then
+                echo "Sway exited before its Wayland socket became ready." >&2
+                cat "$sway_log" >&2
+                exit 1
+              fi
+              if [ -S "$pgo_runtime_dir/$WAYLAND_DISPLAY" ] &&
+                 swaymsg -s "$pgo_runtime_dir/$WAYLAND_DISPLAY" -t get_version >/dev/null 2>&1; then
+                break
+              fi
               sleep 0.1
             done
-            test -S "$pgo_runtime_dir/wayland-1"
+            test -S "$pgo_runtime_dir/$WAYLAND_DISPLAY"
+            swaymsg -s "$pgo_runtime_dir/$WAYLAND_DISPLAY" -t get_version >/dev/null
             : >"$pgo_runtime_dir/wayland-required"
           fi
 
