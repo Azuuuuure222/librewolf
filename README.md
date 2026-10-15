@@ -16,7 +16,7 @@ This package is built specifically for this target device:
 | Architecture | x86_64-musl |
 | CPU tuning baseline | Skylake |
 
-The GitHub Actions runner is **not** the target device; it is only the high-resource build machine. The final LibreWolf binary is optimized for the target device's Skylake CPU and constrained memory/storage environment.
+GitHub Actions is the **build host**; the target device is only the runtime destination. Compilation, PGO, LTO, and linking use the runner's available resources. The target device's CPU, 4 GB RAM, and HDD guide runtime tuning and compatibility, but they must not be used to cap CI compilation parallelism. Build concurrency and worker counts must be based on the actual runner's CPU/RAM and observed build reliability.
 
 - **OS:** Void Linux x86_64-musl
 - **CPU:** Intel Core i3-6100U / Skylake, 2 cores / 4 threads
