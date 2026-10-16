@@ -1,6 +1,16 @@
 # LibreWolf — Skylake / Void Linux musl
 
-A hardware-specific LibreWolf package for an Intel Core i3-6100U (Skylake, 2 cores / 4 threads), 4 GB RAM, HDD, and Wayland on Void Linux x86_64-musl. It is intentionally not portable to pre-Skylake CPUs.
+A hardware-specific LibreWolf package for an Intel Core i3-6100U (Skylake, 2 cores / 4 threads), 4 GB RAM, HDD, and native Wayland on Void Linux x86_64-musl. It is intentionally not portable to pre-Skylake CPUs.
+
+## Native Wayland runtime (no Xwayland)
+
+The browser is built with GTK3's `cairo-gtk3-wayland` toolkit and is intended to run directly on `dwl` without Xwayland or an X11 server. To explicitly select Firefox's native Wayland backend when launching:
+
+```sh
+MOZ_ENABLE_WAYLAND=1 librewolf-wayland
+```
+
+The equivalent command is `MOZ_ENABLE_WAYLAND=1 librewolf`. Check `about:support` and confirm **Window Protocol** reports `wayland`, not `xwayland`. The `MOZ_ENABLE_WAYLAND` variable is the Firefox-specific backend selector; do not set `GDK_BACKEND=wayland` globally for Firefox, because that GTK setting can propagate into child processes. CI uses `GDK_BACKEND=wayland` only for its isolated PGO profiling workload.
 
 ## Target profile
 

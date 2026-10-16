@@ -75,7 +75,7 @@ grep -Fq 'MOZ_ENABLE_WAYLAND=1' "$template" || {
 if grep -Eq 'xvfb-run|GDK_BACKEND=x11|MOZ_ENABLE_WAYLAND=0|MOZ_HEADLESS=1' "$template"; then
   echo "X11/Xvfb/headless PGO paths are forbidden for this Wayland-targeted package" >&2
   exit 1
-}
+fi
 actual_distfile="${1##*/}"
 [ "$actual_distfile" = "$expected_template_distfile" ] || {
   echo "distfile basename mismatch: expected $expected_template_distfile, got $actual_distfile" >&2
