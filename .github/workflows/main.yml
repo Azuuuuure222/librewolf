@@ -132,7 +132,6 @@ jobs:
           export PATH="/opt/xbps/usr/bin/:$PATH"
           ./xbps-src -A "$XBPS_TARGET_ARCH" binary-bootstrap
 
-
       - name: prepare sccache environment
         uses: actions/github-script@v9
         with:
@@ -220,7 +219,6 @@ jobs:
           key: librewolf-source-v5-${{ steps.meta.outputs.sha256 }}
 
       - name: build package
-        id: package-build
         timeout-minutes: 350
         working-directory: void-packages
         env:
@@ -278,7 +276,6 @@ jobs:
           [ "$memory_jobs" -ge "$build_jobs" ] || build_jobs="$memory_jobs"
 
           echo "Build parallelism: $build_jobs jobs ($cpu_jobs CPUs, $((available_kib / 1024)) MiB available RAM)."
-          echo "jobs=$build_jobs" >> "$GITHUB_OUTPUT"
           ./xbps-src -A "$XBPS_TARGET_ARCH" pkg -j"$build_jobs" librewolf
 
       - name: save LibreWolf PGO profile

@@ -1,44 +1,33 @@
 # LibreWolf — Skylake / Void Linux musl
 
-A hardware-specific LibreWolf package for an Intel Core i3-6100U (Skylake, 2 cores / 4 threads), 4 GB RAM, HDD, and native Wayland on Void Linux x86_64-musl. It is intentionally not portable to pre-Skylake CPUs.
+LibreWolf 158.0 for an Intel Core i3-6100U (Skylake), 4 GB RAM, HDD, and Void Linux x86_64-musl. The binary is not portable to pre-Skylake CPUs.
 
-## Native Wayland runtime (no Xwayland)
+## Native Wayland only
 
-The browser is built with GTK3's `cairo-gtk3-wayland` toolkit and is intended to run directly on `dwl` without Xwayland or an X11 server. To explicitly select Firefox's native Wayland backend when launching:
+Built with GTK3 `cairo-gtk3-wayland` for `dwl` without Xwayland or an X11 server. Launch explicitly with:
 
 ```sh
 MOZ_ENABLE_WAYLAND=1 librewolf-wayland
 ```
 
-The equivalent command is `MOZ_ENABLE_WAYLAND=1 librewolf`. Check `about:support` and confirm **Window Protocol** reports `wayland`, not `xwayland`. The `MOZ_ENABLE_WAYLAND` variable is the Firefox-specific backend selector; do not set `GDK_BACKEND=wayland` globally for Firefox, because that GTK setting can propagate into child processes. CI uses `GDK_BACKEND=wayland` only for its isolated PGO profiling workload.
+Verify `about:support` → **Window Protocol** reports `wayland`, not `xwayland`. Avoid setting `GDK_BACKEND=wayland` globally; CI sets it only for the isolated PGO workload.
 
-## Target profile
+## Target tuning
 
-- C/C++: Clang 22, `-O2 -march=skylake`; LLD 22.
-- Rust: `-C target-cpu=skylake`; Rust optimization level 2.
-- Browser build: cross-language full LLVM LTO and PGO.
-- Runtime memory: low-memory tab unloading, a two-process-per-site Fission cap, and one prelaunched Fission process.
-- HDD/RAM: new-tab preload disabled, session-store writes every 30 seconds, and cache chunk memory limited to 16 MiB per cache class.
-- Desktop/media: GTK3 Wayland; ALSA and PulseAudio protocol support (including PipeWire's pulse server).
+- C/C++: Clang 22, `-O2 -march=skylake`; LLD 22. Rust: `-C target-cpu=skylake`.
+- Build: cross-language full LLVM LTO and PGO.
+- Memory: unload inactive tabs under low memory; limit Fission process counts and prelaunches.
+- HDD: disable new-tab preload, write session state every 30 seconds, and cap cache-chunk memory at 16 MiB per cache class.
+- Audio: ALSA and PulseAudio protocol support, including PipeWire's PulseAudio server.
 
-The settings prioritize interactive speed and memory stability on this machine. They are not universal Firefox recommendations; process limits trade some per-site parallelism for lower memory pressure.
+These settings trade some parallelism for lower memory and I/O pressure on the target system.
 
 ## Build and release
 
-- Upstream source: LibreWolf 158.0, source revision 1; package revision 2.
-- Default options: ALSA, D-Bus, PulseAudio, LTO, PGO, Clang, and WASI.
-- CI builds on a hosted runner. Build parallelism is derived from that runner's CPUs and available RAM, never from the laptop's hardware.
-- PGO runs through native Wayland on a headless Weston compositor (1366×768) with D-Bus; it does not require Xvfb or an X11 display. CI exposes the compositor socket to the build chroot, and invalid LLVM profiles are rejected.
-- sccache, verified source archives, PGO profiles, and Void binary packages are cached. Source archives are always checked against the template SHA-256.
-- CI uploads XBPS packages, repository metadata, and SHA-256/SHA-512 manifests. The build job has read-only repository permission; a separate master-only job publishes releases.
+- Source: LibreWolf 158.0, source revision 1; Void package revision 2.
+- CI builds on a hosted runner, profiles under native Wayland via headless Weston (1366×768), validates PGO data, and caches source, profiles, compiler outputs, and Void dependencies.
+- CI publishes XBPS packages, repository metadata, and SHA-256/SHA-512 manifests. The build job has read-only repository permissions; publishing is master-only.
 
-## Key paths
+## Repository rule
 
-- `srcpkgs/librewolf/template`: package recipe, compiler options, PGO/LTO, dependencies, and install rules.
-- `srcpkgs/librewolf/files/vendor.js`: target-specific runtime preferences.
-- `.github/workflows/main.yml`: CI build, caching, verification, and release workflow.
-- `.github/scripts/validate-template.sh`: early source and package metadata validation.
-
-## Repository workflow rule
-
-Commit repository changes directly to `master`. Do not create feature branches or pull requests unless explicitly instructed otherwise.
+Commit changes directly to `master`. Do not create feature branches or pull requests unless explicitly instructed otherwise.

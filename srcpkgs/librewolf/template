@@ -46,22 +46,16 @@ _clear_vendor_checksums() {
 }
 
 post_extract() {
-	case "$XBPS_TARGET_MACHINE" in
-	*-musl)
-		cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
-		;;
-	esac
+	cp "${FILESDIR}/stab.h" toolkit/crashreporter/google-breakpad/src/
 
 	# Mozilla API keys (see https://location.services.mozilla.com/api)
-	# Note: This is for Void Linux use ONLY.
+	# This package targets Void Linux only.
 	echo -n "cd894504-7a2a-4263-abff-ff73ee89ffca" > mozilla-api-key
 }
 
 post_patch() {
 	_clear_vendor_checksums audio_thread_priority
-	if [ "$XBPS_TARGET_LIBC" = "musl" ]; then
-		vsed -e '\;sys/single_threaded.h;d' -i config/system-headers.mozbuild
-	fi
+	vsed -e '\;sys/single_threaded.h;d' -i config/system-headers.mozbuild
 }
 
 do_build() {
@@ -104,14 +98,6 @@ do_build() {
 	test -x /usr/bin/sccache
 	/usr/bin/sccache --version
 
-	disable_jemalloc() {
-		echo "ac_add_options --disable-jemalloc"
-	}
-
-	disable_elfhack() {
-		echo "ac_add_options --disable-elf-hack"
-	}
-
 	disable_wasi() {
 		if [ "$build_option_wasi" ]; then
 			echo "ac_add_options --with-wasi-sysroot=/usr/share/wasi-sysroot"
@@ -144,8 +130,8 @@ do_build() {
 	ac_add_options --disable-install-strip
 	ac_add_options --disable-strip
 	ac_add_options --disable-profiling
-	$(disable_jemalloc)
-	$(disable_elfhack)
+	ac_add_options --disable-jemalloc
+	ac_add_options --disable-elf-hack
 	$(disable_wasi)
 	ac_add_options --with-mozilla-api-keyfile="${wrksrc}/mozilla-api-key"
 	ac_add_options --enable-system-pixman
