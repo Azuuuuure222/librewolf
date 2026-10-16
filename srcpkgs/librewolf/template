@@ -34,10 +34,10 @@ makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
 depends="nss>=3.129 nspr>=4.39 desktop-file-utils hicolor-icon-theme pciutils libavcodec6"
 
 build_options="alsa dbus pulseaudio lto pgo clang wasi debug"
-build_options_default="alsa dbus pulseaudio lto pgo clang wasi"
+build_options_default="alsa dbus pulseaudio lto clang wasi"
 
 desc_option_lto="Enable Link Time Optimization"
-desc_option_pgo="Enable Profile-guided Optimization"
+desc_option_pgo="Enable experimental Profile-guided Optimization"
 desc_option_clang="Build with clang"
 desc_option_wasi="Build wasm sandboxed libraries"
 
@@ -201,8 +201,10 @@ do_build() {
 				timeout --foreground 60s llvm-profdata show "$pgo_profile_path" >/dev/null 2>&1
 		}
 
+		pgo_profile_ready=false
 		if pgo_profile_is_valid; then
 			echo "Using verified cached LibreWolf PGO profile."
+			pgo_profile_ready=true
 		else
 			echo "PGO profile is missing or invalid; generating a fresh profile."
 			rm -f -- "$pgo_profile_path" "$pgo_jarlog_path"
@@ -212,43 +214,56 @@ do_build() {
 			./mach build
 			./mach package
 
-			# Isolated build-time PGO only: Xvfb is not a package runtime dependency.
-			(
-				pgo_runtime_dir="$(mktemp -d "${wrksrc}/pgo-runtime-XXXXXX")"
+			# Follow Void's Firefox PGO launch model. Xvfb is build-only; the
+			# installed browser remains configured for native Wayland.
+			pgo_runtime_dir="$(mktemp -d "${wrksrc}/pgo-runtime-XXXXXX")"
+			if (
 				trap 'rm -rf -- "$pgo_runtime_dir"' EXIT
 				LLVM_PROFDATA=llvm-profdata \
 				JARLOG_FILE="$PWD/jarlog" \
+				GDK_BACKEND=x11 \
 				LD_LIBRARY_PATH="$PWD/obj/dist/librewolf" \
 				XDG_RUNTIME_DIR="$pgo_runtime_dir" \
-					xvfb-run -a -s "-screen 0 1366x768x24 -nolisten local" \
-					env -u WAYLAND_DISPLAY -u MOZ_HEADLESS -u MOZ_HEADLESS_WIDTH -u MOZ_HEADLESS_HEIGHT \
-					GDK_BACKEND=x11 MOZ_ENABLE_WAYLAND=0 \
-					timeout --foreground 30m dbus-run-session -- ./mach python build/pgo/profileserver.py
-			)
+				MOZ_ENABLE_WAYLAND=0 \
+					timeout --foreground 30m xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten local" \
+					dbus-run-session -- ./mach python build/pgo/profileserver.py
+			); then
+				pgo_profile_generated=true
+			else
+				pgo_profile_generated=false
+			fi
+			rm -rf -- "$pgo_runtime_dir"
 
-			test -s merged.profdata
-			test -s jarlog
-			timeout --foreground 60s llvm-profdata show merged.profdata >/dev/null 2>&1 || {
-				echo "Generated PGO profile is not a readable LLVM profile." >&2
-				exit 1
-			}
-			mkdir -p /host/pgo-cache
-			cp merged.profdata "$pgo_profile_path"
-			cp jarlog "$pgo_jarlog_path"
+			if [ "$pgo_profile_generated" = true ] &&
+				[ -s merged.profdata ] &&
+				[ -s jarlog ] &&
+				timeout --foreground 60s llvm-profdata show merged.profdata >/dev/null 2>&1; then
+				mkdir -p /host/pgo-cache
+				cp merged.profdata "$pgo_profile_path"
+				cp jarlog "$pgo_jarlog_path"
+				pgo_profile_ready=true
+			else
+				echo "PGO profile generation failed; falling back to a non-PGO LTO build." >&2
+				find obj -type f -name 'profile-run-*.log' -print -exec tail -n 60 {} \; 2>/dev/null || true
+				rm -f -- merged.profdata jarlog "$pgo_profile_path" "$pgo_jarlog_path"
+				cp mozconfig.orig mozconfig
+				./mach clobber objdir
+			fi
 		fi
 
-		pgo_profile_is_valid || {
-			echo "PGO profile validation failed; refusing to build with an invalid profile." >&2
-			exit 1
-		}
-		./mach clobber objdir
-
-		cp mozconfig{.orig,}
-		printf '%s\n' \
-			"ac_add_options --enable-profile-use=cross" \
-			"ac_add_options --with-pgo-profile-path=${pgo_profile_path@Q}" \
-			"ac_add_options --with-pgo-jarlog=${pgo_jarlog_path@Q}" \
-			>>mozconfig
+		if [ "$pgo_profile_ready" = true ]; then
+			pgo_profile_is_valid || {
+				echo "PGO profile validation failed; refusing to use an invalid profile." >&2
+				exit 1
+			}
+			./mach clobber objdir
+			cp mozconfig{.orig,}
+			printf '%s\n' \
+				"ac_add_options --enable-profile-use=cross" \
+				"ac_add_options --with-pgo-profile-path=${pgo_profile_path@Q}" \
+				"ac_add_options --with-pgo-jarlog=${pgo_jarlog_path@Q}" \
+				>>mozconfig
+		fi
 	fi
 
 	if [ "$build_option_clang" ] && [ "$build_option_lto" ]; then

@@ -67,8 +67,20 @@ grep -Fq 'xvfb-run -a -s' "$template" || {
   echo "PGO must use an isolated Xvfb profile-server workload" >&2
   exit 1
 }
-grep -Fq 'GDK_BACKEND=x11 MOZ_ENABLE_WAYLAND=0' "$template" || {
-  echo "PGO must isolate its temporary X11 backend from Wayland" >&2
+grep -Fq 'GDK_BACKEND=x11' "$template" || {
+  echo "PGO must use the X11 backend for its isolated Xvfb run" >&2
+  exit 1
+}
+grep -Fq 'MOZ_ENABLE_WAYLAND=0' "$template" || {
+  echo "PGO must disable Firefox's Wayland display selection under Xvfb" >&2
+  exit 1
+}
+default_options=$(sed -n 's/^build_options_default="\([^"]*\)"/\1/p' "$template")
+case " $default_options " in
+  *" pgo "*) echo "PGO must remain opt-in until profile startup is reliable" >&2; exit 1 ;;
+esac
+grep -Fq 'falling back to a non-PGO LTO build' "$template" || {
+  echo "PGO failures must fall back to the standard LTO build" >&2
   exit 1
 }
 if grep -Eq 'GDK_BACKEND=wayland|MOZ_ENABLE_WAYLAND=1|pgo-runtime/wayland' "$template"; then
