@@ -18,7 +18,7 @@ The settings prioritize interactive speed and memory stability on this machine. 
 - Upstream source: LibreWolf 158.0, source revision 1; package revision 2.
 - Default options: ALSA, D-Bus, PulseAudio, LTO, PGO, Clang, and WASI.
 - CI builds on a hosted runner. Build parallelism is derived from that runner's CPUs and available RAM, never from the laptop's hardware.
-- PGO uses Xvfb/X11 with D-Bus at a 1366×768 virtual display; native headless mode crashed during Firefox 158 profile initialization. Invalid LLVM profiles are rejected.
+- PGO runs through native Wayland on a headless Weston compositor (1366×768) with D-Bus; it does not require Xvfb or an X11 display. CI exposes the compositor socket to the build chroot, and invalid LLVM profiles are rejected.
 - sccache, verified source archives, PGO profiles, and Void binary packages are cached. Source archives are always checked against the template SHA-256.
 - CI uploads XBPS packages, repository metadata, and SHA-256/SHA-512 manifests. The build job has read-only repository permission; a separate master-only job publishes releases.
 

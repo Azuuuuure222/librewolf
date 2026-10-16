@@ -23,7 +23,7 @@ esac
 _llvmver=22
 hostmakedepends="unzip zip pkg-config perl python3 yasm rust
  cargo rust-sccache llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which
- tar xz $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')
+ tar xz $(vopt_if pgo 'dbus mesa-dri vulkan-loader pciutils')
  $(vopt_if wasi wasi-sdk)"
 makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
  pixman-devel libevent-devel libnotify-devel libwebp-devel
@@ -226,21 +226,18 @@ do_build() {
 			./mach build
 			./mach package
 
-			# Use the same Xvfb/X11 profiling path as Void's Firefox package.
-			# Firefox 158's native headless backend segfaulted before profile initialization.
-			(
-				pgo_runtime_dir="$(mktemp -d "${wrksrc}/pgo-runtime-XXXXXX")"
-				trap 'rm -rf -- "$pgo_runtime_dir"' EXIT
-				LLVM_PROFDATA=llvm-profdata \
-				JARLOG_FILE="$PWD/jarlog" \
-				GDK_BACKEND=x11 \
-				LD_LIBRARY_PATH="$PWD/obj/dist/librewolf" \
-				XDG_RUNTIME_DIR="$pgo_runtime_dir" \
-				MOZ_ENABLE_WAYLAND=0 \
-				xvfb-run -a -s "-screen 0 1366x768x24 -nolisten local" \
-					env -u WAYLAND_DISPLAY -u MOZ_HEADLESS -u MOZ_HEADLESS_WIDTH -u MOZ_HEADLESS_HEIGHT \
-					timeout --foreground 30m dbus-run-session -- ./mach python build/pgo/profileserver.py
-			)
+			# Profile through native Wayland on a headless Weston compositor.
+			# CI starts Weston outside the xbps chroot and shares its socket at /host/pgo-runtime.
+			test -f /host/pgo-runtime/wayland-required
+			test -S /host/pgo-runtime/wayland-1
+			LLVM_PROFDATA=llvm-profdata \
+			JARLOG_FILE="$PWD/jarlog" \
+			GDK_BACKEND=wayland \
+			WAYLAND_DISPLAY=wayland-1 \
+			XDG_RUNTIME_DIR=/host/pgo-runtime \
+			MOZ_ENABLE_WAYLAND=1 \
+			LD_LIBRARY_PATH="$PWD/obj/dist/librewolf" \
+				timeout --foreground 30m dbus-run-session -- ./mach python build/pgo/profileserver.py
 
 			test -s merged.profdata
 			test -s jarlog

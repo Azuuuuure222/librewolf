@@ -58,6 +58,24 @@ expected_source_url="https://librewolf.dev/api/packages/librewolf/generic/librew
   exit 1
 }
 
+# This package targets native Wayland only. Keep PGO profiling on Wayland too;
+# never regress to Xvfb/X11 or MOZ_HEADLESS for the profiling workload.
+grep -Fq 'ac_add_options --enable-default-toolkit=cairo-gtk3-wayland' "$template" || {
+  echo "template must configure the GTK3 Wayland toolkit" >&2
+  exit 1
+}
+grep -Fq 'GDK_BACKEND=wayland' "$template" || {
+  echo "PGO profiling must use the native Wayland backend" >&2
+  exit 1
+}
+grep -Fq 'MOZ_ENABLE_WAYLAND=1' "$template" || {
+  echo "PGO profiling must enable native Wayland" >&2
+  exit 1
+}
+if grep -Eq 'xvfb-run|GDK_BACKEND=x11|MOZ_ENABLE_WAYLAND=0|MOZ_HEADLESS=1' "$template"; then
+  echo "X11/Xvfb/headless PGO paths are forbidden for this Wayland-targeted package" >&2
+  exit 1
+}
 actual_distfile="${1##*/}"
 [ "$actual_distfile" = "$expected_template_distfile" ] || {
   echo "distfile basename mismatch: expected $expected_template_distfile, got $actual_distfile" >&2
