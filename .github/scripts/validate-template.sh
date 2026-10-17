@@ -44,7 +44,7 @@ llvmver=$(sed -n 's/^_llvmver=\([0-9][0-9]*\)$/\1/p' "$template")
   echo "template must pin an explicit LLVM major version" >&2
   exit 1
 }
-grep -Fq 'llvm${_llvmver} clang${_llvmver} lld${_llvmver}' "$template" || {
+grep -Fq 'llvm${_llvmver} clang${_llvmver} clang${_llvmver}-devel lld${_llvmver}' "$template" || {
   echo "Clang, LLD, and LLVM must use the same pinned toolchain major" >&2
   exit 1
 }
