@@ -9,12 +9,6 @@ on:
       - .github/workflows/main.yml
       - .github/scripts/**
   workflow_dispatch:
-    inputs:
-      pgo:
-        description: "Try experimental PGO; a failed profile run falls back to LTO-only"
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: librewolf-${{ github.ref }}
@@ -90,7 +84,6 @@ jobs:
           bash .github/scripts/validate-template.sh srcpkgs/librewolf/template void-packages/srcpkgs/rust/template void-packages/srcpkgs/wasi-sdk/template
 
       - name: restore LibreWolf PGO profile
-        if: ${{ inputs.pgo == true }}
         id: pgo-cache
         uses: actions/cache/restore@v6
         with:
@@ -229,7 +222,7 @@ jobs:
         timeout-minutes: 350
         working-directory: void-packages
         env:
-          PGO_BUILD: ${{ inputs.pgo || false }}
+          PGO_BUILD: true
         run: |
           set -euo pipefail
           export PATH="/opt/xbps/usr/bin/:$PATH"
@@ -259,7 +252,7 @@ jobs:
           ./xbps-src -A "$XBPS_TARGET_ARCH" "${pgo_options[@]}" pkg -j"$build_jobs" librewolf
 
       - name: save LibreWolf PGO profile
-        if: ${{ always() && inputs.pgo == true && steps.pgo-cache.outputs.cache-hit != 'true' && hashFiles('void-packages/hostdir/pgo-cache/merged.profdata') != '' && hashFiles('void-packages/hostdir/pgo-cache/jarlog') != '' }}
+        if: ${{ always() && steps.pgo-cache.outputs.cache-hit != 'true' && hashFiles('void-packages/hostdir/pgo-cache/merged.profdata') != '' && hashFiles('void-packages/hostdir/pgo-cache/jarlog') != '' }}
         uses: actions/cache/save@v6
         continue-on-error: true
         with:
@@ -279,7 +272,7 @@ jobs:
         working-directory: void-packages
         run: rm -f hostdir/sccache-env
 
-      - name: checksum packages
+      - name: stage XBPS packages only
         working-directory: void-packages/hostdir/binpkgs/
         run: |
           set -euo pipefail
@@ -287,22 +280,14 @@ jobs:
             echo "no XBPS packages were produced" >&2
             exit 1
           }
-          compgen -G '*-repodata' >/dev/null || {
-            echo "no repository metadata was produced" >&2
-            exit 1
-          }
-          sha256sum -- *.xbps *-repodata | tee SHA256SUMS
-          sha512sum -- *.xbps *-repodata | tee SHA512SUMS
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+          find . -maxdepth 1 -type f -name '*.xbps' -exec cp -t "$GITHUB_WORKSPACE/release-assets" -- {} +
 
       - name: upload release bundle
         uses: actions/upload-artifact@v4
         with:
           name: librewolf-packages
-          path: |
-            void-packages/hostdir/binpkgs/*.xbps
-            void-packages/hostdir/binpkgs/*-repodata
-            void-packages/hostdir/binpkgs/SHA256SUMS
-            void-packages/hostdir/binpkgs/SHA512SUMS
+          path: release-assets/*.xbps
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -355,7 +340,7 @@ jobs:
           set -euo pipefail
           gh release view "$TAG" >/dev/null 2>&1 && exit 0
           gh release create "$TAG" \
-            --title "librewolf $TAG" \
+            --title "$VERSION" \
             --notes "https://librewolf.dev/librewolf/source/releases/tag/${VERSION}-${REV}" \
             --latest=false
 
@@ -368,32 +353,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Preserve existing release assets only if their bytes match this build.
-          existing_assets="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
-          remote_asset_digests="$(gh api "repos/$GH_REPO/releases/tags/$TAG" --jq '.assets[] | [.name, (.digest // "")] | @tsv')"
-          verify_dir="$(mktemp -d)"
-          trap 'rm -rf -- "$verify_dir"' EXIT
-
-          for asset in *.xbps *-repodata SHA256SUMS SHA512SUMS; do
-            [ -f "$asset" ] || continue
-            if printf '%s\n' "$existing_assets" | grep -Fxq -- "$asset"; then
-              expected_digest="sha256:$(sha256sum -- "$asset" | awk '{print $1}')"
-              actual_digest="$(printf '%s\n' "$remote_asset_digests" | awk -F '\t' -v name="$asset" '$1 == name {print $2; exit}')"
-              if [ -z "$actual_digest" ]; then
-                # Older GitHub assets may not expose a server-side digest.
-                gh release download "$TAG" --dir "$verify_dir" --pattern "$asset"
-                actual_digest="sha256:$(sha256sum -- "$verify_dir/$asset" | awk '{print $1}')"
-                rm -f -- "$verify_dir/$asset"
-              fi
-              if [ "$actual_digest" != "$expected_digest" ]; then
-                echo "Refusing to reuse $asset: published digest $actual_digest differs from this build $expected_digest." >&2
-                exit 1
-              fi
-              echo "Verified existing release asset: $asset"
-            else
-              gh release upload "$TAG" "$asset"
-            fi
-          done
+          # Releases contain package archives only. Replace same-named assets on rebuild.
+          compgen -G '*.xbps' >/dev/null || {
+            echo "no .xbps assets found for release $TAG" >&2
+            exit 1
+          }
+          gh release upload "$TAG" --clobber ./*.xbps
 
       - name: mark release latest
         env:
