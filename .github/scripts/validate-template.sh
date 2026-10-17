@@ -39,6 +39,32 @@ printf '%s\n' "$checksum" | grep -Eq '^[0-9A-Fa-f]{64}$' || {
   exit 1
 }
 
+llvmver=$(sed -n 's/^_llvmver=\([0-9][0-9]*\)$/\1/p' "$template")
+[[ "$llvmver" =~ ^[0-9]+$ ]] || {
+  echo "template must pin an explicit LLVM major version" >&2
+  exit 1
+}
+grep -Fq 'llvm${_llvmver} clang${_llvmver} lld${_llvmver}' "$template" || {
+  echo "Clang, LLD, and LLVM must use the same pinned toolchain major" >&2
+  exit 1
+}
+if [ -n "${2:-}" ]; then
+  rust_template=$2
+  [ -f "$rust_template" ] || {
+    echo "Void Rust template not found: $rust_template" >&2
+    exit 1
+  }
+  rust_llvmver=$(sed -n 's/^_llvmver=\([0-9][0-9]*\)$/\1/p' "$rust_template")
+  [[ "$rust_llvmver" =~ ^[0-9]+$ ]] || {
+    echo "could not determine LLVM major from Void Rust template: $rust_template" >&2
+    exit 1
+  }
+  [ "$llvmver" = "$rust_llvmver" ] || {
+    echo "LLVM toolchain mismatch: LibreWolf uses LLVM $llvmver but Void Rust emits LLVM $rust_llvmver bitcode" >&2
+    exit 1
+  }
+fi
+
 set -- $distfiles
 [ "$#" -eq 1 ] || {
   echo "template must contain exactly one distfile URL" >&2

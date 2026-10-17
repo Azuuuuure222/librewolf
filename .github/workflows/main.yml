@@ -35,8 +35,8 @@ jobs:
     env:
       XBPS_TARGET_ARCH: x86_64-musl
       SCCACHE_GHA_ENABLED: "on"
-      SCCACHE_GHA_VERSION: "librewolf-x86_64-musl-skylake-v1"
-      LIBREWOLF_PGO_CACHE_VERSION: "v11"
+      SCCACHE_GHA_VERSION: "librewolf-x86_64-musl-skylake-llvm23-v2"
+      LIBREWOLF_PGO_CACHE_VERSION: "v12"
     steps:
       - name: free space
         run: |
@@ -87,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n .github/scripts/validate-template.sh
-          bash .github/scripts/validate-template.sh srcpkgs/librewolf/template
+          bash .github/scripts/validate-template.sh srcpkgs/librewolf/template void-packages/srcpkgs/rust/template
 
       - name: restore LibreWolf PGO profile
         if: ${{ inputs.pgo == true }}
@@ -97,7 +97,7 @@ jobs:
           path: void-packages/hostdir/pgo-cache
           # PGO validity follows source + downstream patches + this explicit version.
           # Bump LIBREWOLF_PGO_CACHE_VERSION when profile-relevant build/workload inputs change.
-          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', 'srcpkgs/librewolf/files/stab.h', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/cargo/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', 'srcpkgs/librewolf/files/stab.h', 'void-packages/srcpkgs/llvm23/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/cargo/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: prepare xbps-static
         run: |
@@ -255,7 +255,7 @@ jobs:
         continue-on-error: true
         with:
           path: void-packages/hostdir/pgo-cache
-          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', 'srcpkgs/librewolf/files/stab.h', 'void-packages/srcpkgs/llvm22/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/cargo/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', 'srcpkgs/librewolf/files/stab.h', 'void-packages/srcpkgs/llvm23/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/cargo/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: save Void binary package cache
         if: ${{ always() && !cancelled() && steps.xbps-cache.outputs.cache-hit != 'true' }}

@@ -1,7 +1,7 @@
 # Template file for 'librewolf'
 pkgname=librewolf
 version=158.0
-revision=2
+revision=3
 _rev=1
 wrksrc=${pkgname}-${version}-${_rev}
 build_helper="rust"
@@ -20,7 +20,7 @@ case "$XBPS_TARGET_MACHINE" in
 	*) broken="only supported on x86_64-musl" ;;
 esac
 
-_llvmver=22
+_llvmver=23
 hostmakedepends="unzip zip pkg-config perl python3 yasm rust
  cargo rust-sccache llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which
  tar xz $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')
