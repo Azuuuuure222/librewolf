@@ -15,26 +15,22 @@ Verify `about:support` → **Window Protocol** reports `wayland`, not `xwayland`
 
 ## Download and install
 
-Open [GitHub Releases](https://github.com/Azuuuuure222/librewolf/releases) and choose a release that actually contains the required assets. Download its `.xbps` package, `x86_64-musl-repodata`, `SHA256SUMS` and `SHA512SUMS` into one directory. Verify the downloaded assets:
+Open [GitHub Releases](https://github.com/Azuuuuure222/librewolf/releases) and download the `.xbps` package for your target. Releases intentionally contain package archives only—no repository metadata or checksum manifests.
+
+For a local install, keep the official Void repositories enabled for dependencies, install `xbps` tools, and create local repository metadata from the downloaded package:
 
 ```sh
-sha256sum --check SHA256SUMS
-sha512sum --check SHA512SUMS
-```
-
-Install through the local repository directory while keeping the official Void repositories available for dependencies:
-
-```sh
+xbps-rindex -a ./librewolf-*.xbps
 sudo xbps-install --repository="$PWD" librewolf
 ```
 
-Keep the package, repository metadata and checksum files from the **same release**. Do not mix assets from different tags. The current source recipe may be newer than the latest published binary; always use the actual release page's filenames and availability.
+If you want to verify a download, calculate its checksum locally and compare it with a trusted value obtained independently. Do not assume a release contains checksum files or repository metadata. The source recipe may be newer than the latest published binary; check the release's actual version and assets.
 
 ## Target tuning
 
 - C/C++: Clang/LLD/LLVM 23 (matched to Void's Rust LLVM version), `-O2 -march=skylake`; Rust: `-C target-cpu=skylake`.
-- Build: cross-language LLVM LTO; PGO is experimental and disabled by default.
-- PGO: a manual workflow dispatch can enable it. Firefox's profile server repeatedly crashed during CI profile initialization in headless, Wayland, and Xvfb modes. If opt-in profile generation fails or produces an invalid profile, the recipe removes the instrumented build and continues with a normal LTO build.
+- Build: cross-language LLVM LTO and PGO are enabled by default in CI.
+- PGO: CI restores a profile cache keyed to source and profile-relevant build inputs; on a cache miss it attempts to generate a fresh profile. If generation fails or the profile is invalid, the recipe falls back to a non-PGO LTO build. Verify performance against an LTO-only baseline before treating PGO as a runtime win.
 - Memory: unload tabs under low-memory conditions; constrain Fission process reuse and prelaunch.
 - HDD: disable new-tab preload, save session state every 30 seconds, and cap cache-chunk memory at 16 MiB per cache class.
 - Audio: ALSA and PulseAudio protocol support, including `pipewire-pulse`.
@@ -45,7 +41,7 @@ These settings prioritize resource stability on the target; process limits trade
 
 - Source revision: LibreWolf 158.0-1; package revision: 4.
 - CI builds on a hosted runner. Build parallelism follows runner CPU and RAM capacity.
-- CI validates the source checksum, caches source/compiler/Void dependencies, and publishes XBPS packages, repository metadata, and SHA-256/SHA-512 manifests. A PGO cache is restored or saved only for a manual run where PGO is explicitly enabled.
+- CI validates the source checksum, caches source/compiler/Void dependencies, and publishes only `.xbps` package files. Release tags and release titles use the LibreWolf version alone. PGO profiles are cached when available and regenerated when the cache key changes.
 - Build permissions are read-only; publishing runs separately and only for `master`.
 
 ## Key paths
