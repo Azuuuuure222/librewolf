@@ -115,24 +115,24 @@ do_build() {
 		[ -n "$build_option_wasi" ] || return 0
 		local wasi_runtime_root="/usr/lib/llvm/${_wasi_llvmver}/lib/clang/${_wasi_llvmver}/lib"
 		local clang_resource_root="/usr/lib/clang/${_llvmver}/lib"
-		local specification runtime_subdir target_triple source_dir target_dir
+		local source_dir="${wasi_runtime_root}/wasi"
+		local target_triple target_dir
+		local archive="${source_dir}/libclang_rt.builtins-wasm32.a"
 		local -a wasi_targets=(
-			"wasi:wasm32-unknown-wasip1"
-			"wasi-threads:wasm32-unknown-wasip1-threads"
+			"wasm32-unknown-wasip1"
+			"wasm32-unknown-wasip1-threads"
 		)
 
-		for specification in "${wasi_targets[@]}"; do
-			runtime_subdir="${specification%%:*}"
-			target_triple="${specification#*:}"
-			source_dir="${wasi_runtime_root}/${runtime_subdir}"
+		# The SDK distributes one wasm32 builtins archive under lib/wasi.
+		# The same archive serves the Preview 1 and Preview 1 threads triples.
+		if [ ! -s "$archive" ]; then
+			echo "Required WASI compiler-rt archive is missing: $archive" >&2
+			return 1
+		fi
+		for target_triple in "${wasi_targets[@]}"; do
 			target_dir="${clang_resource_root}/${target_triple}"
-
-			if [ ! -s "${source_dir}/libclang_rt.builtins-wasm32.a" ]; then
-				echo "Required WASI compiler-rt archive is missing: ${source_dir}/libclang_rt.builtins-wasm32.a" >&2
-				return 1
-			fi
 			mkdir -p "$target_dir"
-			ln -sfn "${source_dir}/libclang_rt.builtins-wasm32.a" "${target_dir}/libclang_rt.builtins.a"
+			ln -sfn "$archive" "${target_dir}/libclang_rt.builtins.a"
 			if [ -s "${source_dir}/libgcc.a" ]; then
 				ln -sfn "${source_dir}/libgcc.a" "${target_dir}/libgcc.a"
 			fi

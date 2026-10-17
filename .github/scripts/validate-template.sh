@@ -65,6 +65,10 @@ grep -Fq 'libclang_rt.builtins-wasm32.a' "$template" || {
   echo "template must validate and link the WASI compiler-rt builtins archive" >&2
   exit 1
 }
+grep -Fq '"wasm32-unknown-wasip1-threads"' "$template" || {
+  echo "template must bridge both WASI Preview 1 target layouts" >&2
+  exit 1
+}
 grep -Fq -- '--with-libclang-path=/usr/lib/llvm/${_llvmver}/lib' "$template" || {
   echo "bindgen must search the matching versioned LLVM library directory" >&2
   exit 1
