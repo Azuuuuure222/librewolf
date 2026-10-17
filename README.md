@@ -43,7 +43,7 @@ These settings prioritize resource stability on the target; process limits trade
 
 ## Build and release
 
-- Source revision: LibreWolf 158.0-1; package revision: 3.
+- Source revision: LibreWolf 158.0-1; package revision: 4.
 - CI builds on a hosted runner. Build parallelism follows runner CPU and RAM capacity.
 - CI validates the source checksum, caches source/compiler/Void dependencies, and publishes XBPS packages, repository metadata, and SHA-256/SHA-512 manifests. A PGO cache is restored or saved only for a manual run where PGO is explicitly enabled.
 - Build permissions are read-only; publishing runs separately and only for `master`.
@@ -72,7 +72,7 @@ The sections above are the quick-start summary. This reference records the full 
 | CPU | Intel Core i3-6100U, Skylake, 2 cores / 4 threads |
 | RAM/storage | 4 GB DDR3 / HDD |
 | Display/audio | Native Wayland / ALSA and PulseAudio protocol |
-| Source/package revision | LibreWolf 158.0, source revision 1, Void package revision 3 |
+| Source/package revision | LibreWolf 158.0, source revision 1, Void package revision 4 |
 
 Priorities are runtime responsiveness on the actual Skylake machine, memory stability, reduced unnecessary HDD writes, useful CI throughput, reuse of expensive build outputs, and a small maintainable patch set. The **build host and runtime target are different machines**: compile and link concurrency should follow the actual GitHub runner's CPU/RAM, not the laptop's four hardware threads.
 
@@ -102,7 +102,8 @@ Earlier README revisions also documented `browser.low_commit_space_threshold_mb=
 ### Compiler, LTO, and linker details
 
 - C/C++ uses Clang 23 and `-O2 -march=skylake`; Rust uses `-C target-cpu=skylake` and `RUSTC_OPT_LEVEL=2`. The current template does not separately add `-mtune=skylake`, although older README revisions documented it.
-- Clang, LLVM, LLD and the LLVM major used by Void's Rust template are explicitly aligned at version 23. The validator now checks this before compilation because incompatible LLVM bitcode can break cross-language LTO.
+- Clang, LLVM, LLD and the LLVM major used by Void's Rust template are explicitly aligned at version 23. The validator checks this before compilation because incompatible LLVM bitcode can break cross-language LTO.
+- Rust bindgen requires the unversioned `libclang.so`, which Void ships in `clang23-devel` under `/usr/lib/llvm/23/lib`. The package installs that build-only dependency and points `--with-libclang-path` at the versioned library directory instead of the obsolete `/usr/lib` path.
 - Full cross-language LTO uses `--enable-lto=cross,full` when the default LTO option is enabled. LLD adds `-Wl,--threads=N` and `-Wl,--lto-O2`; N follows the selected build job count.
 - **Do not re-add forced LTO partitions.** The latest fix leaves LLD's partitioning default because multiple partitions can separate the Linux sandbox's file-scope `SyscallAsm` symbol from its C++ callers.
 - `-O2` is intentional: `-O3` is not automatically faster and can increase code size, instruction-cache pressure, memory use and compile time on the 4 GB target.
@@ -115,7 +116,7 @@ The recipe defines `alsa`, `dbus`, `pulseaudio`, `lto`, `pgo`, `clang`, `wasi` a
 
 Build settings disable package-build tests, the updater, crash reporter, telemetry/data-reporting features, Cargo incremental compilation, jemalloc and ELF hack; Firefox's install/strip options are also explicitly controlled by the recipe. The environment uses system Python for mach, a dedicated mozbuild state directory, `MOZ_NOSPAM=1` and reproducible-date support through `SOURCE_DATE_EPOCH` when supplied.
 
-Build dependencies include GTK3, NSS/NSPR, pixman, JPEG, libevent, libnotify, WebP, FreeType, the required X11 protocol/header libraries, Rust/Cargo, Node.js, cbindgen, NASM, Clang/LLVM/LLD and Void's packaged `rust-sccache`. Option-specific dependencies cover ALSA, D-Bus, PulseAudio, WASI and PGO.
+Build dependencies include GTK3, NSS/NSPR, pixman, JPEG, libevent, libnotify, WebP, FreeType, the required X11 protocol/header libraries, Rust/Cargo, Node.js, cbindgen, NASM, Clang/LLVM/LLD, Clang development libraries for bindgen, and Void's packaged `rust-sccache`. Option-specific dependencies cover ALSA, D-Bus, PulseAudio, WASI and PGO.
 
 System-library configuration includes FFI, JPEG, libevent, NSPR, NSS, WebP, zlib and pixman. System PNG is disabled because the target system's libpng lacks APNG support. System libvpx remains commented out. Runtime dependencies include NSS, NSPR, desktop-file-utils, hicolor-icon-theme, pciutils and Void's `libavcodec6` for codec support; FFmpeg development headers are not required by this recipe.
 
@@ -186,7 +187,7 @@ The current recipe also removes `sys/single_threaded.h` from Firefox's generated
 | Oct 14 | Updated to LibreWolf 158.0; fixed scheduler sandbox patch ranges, `mallinfo`, source-cache identity and obsolete Rust LTO handling; removed old branch-cleanup logic. |
 | Oct 15 | Tuned Fission reuse, corrected LLD worker parsing, improved PGO helpers/cache handling, documented direct-to-master workflow and shortened the 1,078-line README. |
 | Oct 16 | Tried headless and native-Wayland PGO, then switched to optional Xvfb PGO after profile startup failures; added an LTO-only fallback, validation guards and packaging/CI cleanup. |
-| Oct 17 | Pinned Clang/LLVM/LLD to LLVM 23 to match Void Rust and removed forced LTO partitioning because of sandbox assembly symbol-linkage risk. |
+| Oct 17 | Pinned Clang/LLVM/LLD to LLVM 23 to match Void Rust, removed forced LTO partitioning, and corrected the bindgen libclang dependency/path after configure could not find `libclang.so`. |
 
 Key lessons from failures: don't copy unmanaged tools into an XBPS chroot; use explicit compiler-cache paths; validate package/source metadata before costly builds; re-hash source-cache entries; validate LLVM profiles instead of trusting file existence; make cache keys specific to profile-affecting inputs; don't base CI worker counts on the laptop; don't force LTO partitions that can break sandbox linkage; and remove stale patches when upstream fixes or source layout make them obsolete.
 

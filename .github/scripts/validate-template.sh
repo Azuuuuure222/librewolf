@@ -48,6 +48,14 @@ grep -Fq 'llvm${_llvmver} clang${_llvmver} lld${_llvmver}' "$template" || {
   echo "Clang, LLD, and LLVM must use the same pinned toolchain major" >&2
   exit 1
 }
+grep -Fq 'clang${_llvmver}-devel' "$template" || {
+  echo "Clang's development package is required for the unversioned libclang.so used by bindgen" >&2
+  exit 1
+}
+grep -Fq -- '--with-libclang-path=/usr/lib/llvm/${_llvmver}/lib' "$template" || {
+  echo "bindgen must search the matching versioned LLVM library directory" >&2
+  exit 1
+}
 if [ -n "${2:-}" ]; then
   rust_template=$2
   [ -f "$rust_template" ] || {

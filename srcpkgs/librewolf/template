@@ -1,7 +1,7 @@
 # Template file for 'librewolf'
 pkgname=librewolf
 version=158.0
-revision=3
+revision=4
 _rev=1
 wrksrc=${pkgname}-${version}-${_rev}
 build_helper="rust"
@@ -22,7 +22,7 @@ esac
 
 _llvmver=23
 hostmakedepends="unzip zip pkg-config perl python3 yasm rust
- cargo rust-sccache llvm${_llvmver} clang${_llvmver} lld${_llvmver} nodejs cbindgen nasm which
+ cargo rust-sccache llvm${_llvmver} clang${_llvmver} clang${_llvmver}-devel lld${_llvmver} nodejs cbindgen nasm which
  tar xz $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')
  $(vopt_if wasi wasi-sdk)"
 makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
@@ -115,7 +115,7 @@ do_build() {
 	ac_add_options --disable-bootstrap
 	ac_add_options --with-ccache=/usr/bin/sccache
 	$(vopt_if lto 'ac_add_options --enable-lto=cross,full')
-	$(vopt_if clang 'ac_add_options --with-libclang-path=/usr/lib')
+	$(vopt_if clang "ac_add_options --with-libclang-path=/usr/lib/llvm/${_llvmver}/lib")
 
 	ac_add_options --enable-application=browser
 	ac_add_options --enable-release
