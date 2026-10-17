@@ -35,7 +35,7 @@ makedepends="nss-devel libjpeg-turbo-devel gtk+3-devel
 depends="nss>=3.129 nspr>=4.39 desktop-file-utils hicolor-icon-theme pciutils libavcodec6"
 
 build_options="alsa dbus pulseaudio lto pgo clang wasi debug"
-build_options_default="alsa dbus pulseaudio lto clang wasi"
+build_options_default="alsa dbus pulseaudio lto pgo clang wasi"
 
 desc_option_lto="Enable Link Time Optimization"
 desc_option_pgo="Enable experimental Profile-guided Optimization"
