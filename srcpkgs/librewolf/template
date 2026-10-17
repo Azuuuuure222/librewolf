@@ -121,7 +121,7 @@ do_build() {
 			"wasm32-unknown-wasip1-threads"
 		)
 
-		archive="$(find "$wasi_runtime_root" -type f \\( -name 'libclang_rt.builtins.a' -o -name 'libclang_rt.builtins-wasm32.a' \\) -print -quit)"
+		archive="$(find "$wasi_runtime_root" -type f \( -name 'libclang_rt.builtins.a' -o -name 'libclang_rt.builtins-wasm32.a' \) -print -quit)"
 		if [ -z "$archive" ] || [ ! -s "$archive" ]; then
 			echo "Required WASI compiler-rt archive not found under $wasi_runtime_root." >&2
 			find "$wasi_runtime_root" -type f -name 'libclang_rt*' -print >&2 || true
