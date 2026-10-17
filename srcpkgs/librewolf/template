@@ -108,31 +108,32 @@ do_build() {
 		fi
 	fi
 
-	# Void's wasi-sdk 32 installs separate LLVM 22 compiler-rt archives per
-	# WASI target. Clang 23 expects the same target layout under its own resource dir.
-	# Link each target's real archive instead of assuming the older flat 'wasi/' layout.
+	# wasi-sdk's compiler-rt archive layout differs from Clang's target-specific
+	# resource layout. Discover the installed archive instead of hard-coding either.
+	# The Preview 1 and Preview 1 threads targets share the WASI builtins archive.
 	prepare_wasi_builtins() {
 		[ -n "$build_option_wasi" ] || return 0
 		local wasi_runtime_root="/usr/lib/llvm/${_wasi_llvmver}/lib/clang/${_wasi_llvmver}/lib"
 		local clang_resource_root="/usr/lib/clang/${_llvmver}/lib"
-		local target_triple source_dir archive target_dir
+		local target_triple archive target_dir
 		local -a wasi_targets=(
 			"wasm32-unknown-wasip1"
 			"wasm32-unknown-wasip1-threads"
 		)
 
+		archive="$(find "$wasi_runtime_root" -type f \\( -name 'libclang_rt.builtins.a' -o -name 'libclang_rt.builtins-wasm32.a' \\) -print -quit)"
+		if [ -z "$archive" ] || [ ! -s "$archive" ]; then
+			echo "Required WASI compiler-rt archive not found under $wasi_runtime_root." >&2
+			find "$wasi_runtime_root" -type f -name 'libclang_rt*' -print >&2 || true
+			return 1
+		fi
+
 		for target_triple in "${wasi_targets[@]}"; do
-			source_dir="${wasi_runtime_root}/${target_triple}"
-			archive="${source_dir}/libclang_rt.builtins.a"
-			if [ ! -s "$archive" ]; then
-				echo "Required WASI compiler-rt archive is missing: $archive" >&2
-				return 1
-			fi
 			target_dir="${clang_resource_root}/${target_triple}"
 			mkdir -p "$target_dir"
 			ln -sfn "$archive" "${target_dir}/libclang_rt.builtins.a"
 		done
-		echo "WASI compiler-rt archives prepared for Clang ${_llvmver}."
+		echo "WASI compiler-rt archive prepared for Clang ${_llvmver}: $archive"
 	}
 
 	prepare_wasi_builtins || exit 1
