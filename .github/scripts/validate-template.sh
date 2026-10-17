@@ -58,15 +58,19 @@ wasi_llvmver=$(sed -n 's/^_wasi_llvmver=\([0-9][0-9]*\)$/\1/p' "$template")
   exit 1
 }
 grep -Fq 'prepare_wasi_builtins()' "$template" || {
-  echo "template must bridge Void's flat WASI compiler-rt layout to Clang's target directories" >&2
+  echo "template must bridge Void's per-target WASI compiler-rt layout to Clang's target directories" >&2
   exit 1
 }
-grep -Fq 'libclang_rt.builtins-wasm32.a' "$template" || {
-  echo "template must validate and link the WASI compiler-rt builtins archive" >&2
+grep -Fq 'source_dir="${wasi_runtime_root}/${target_triple}"' "$template" || {
+  echo "template must locate WASI runtime archives under their actual target-triple directories" >&2
+  exit 1
+}
+grep -Fq 'libclang_rt.builtins.a' "$template" || {
+  echo "template must validate and link the target-specific WASI compiler-rt archive" >&2
   exit 1
 }
 grep -Fq '"wasm32-unknown-wasip1-threads"' "$template" || {
-  echo "template must bridge both WASI Preview 1 target layouts" >&2
+  echo "template must bridge the WASI Preview 1 threads runtime too" >&2
   exit 1
 }
 grep -Fq -- '--with-libclang-path=/usr/lib/llvm/${_llvmver}/lib' "$template" || {
