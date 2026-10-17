@@ -83,6 +83,10 @@ grep -Fq 'falling back to a non-PGO LTO build' "$template" || {
   echo "PGO failures must fall back to the standard LTO build" >&2
   exit 1
 }
+if grep -Eq '^[[:space:]]*(export[[:space:]]+)?LDFLAGS.*--lto-partitions=' "$template"; then
+  echo "do not force global LTO partitions; it can break SyscallAsm linkage in the Linux sandbox" >&2
+  exit 1
+fi
 if grep -Eq 'GDK_BACKEND=wayland|MOZ_ENABLE_WAYLAND=1|pgo-runtime/wayland' "$template"; then
   echo "obsolete headless-Wayland PGO setup remains in the package template" >&2
   exit 1
