@@ -87,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n .github/scripts/validate-template.sh
-          bash .github/scripts/validate-template.sh srcpkgs/librewolf/template void-packages/srcpkgs/rust/template
+          bash .github/scripts/validate-template.sh srcpkgs/librewolf/template void-packages/srcpkgs/rust/template void-packages/srcpkgs/wasi-sdk/template
 
       - name: restore LibreWolf PGO profile
         if: ${{ inputs.pgo == true }}
@@ -115,12 +115,21 @@ jobs:
           set -euo pipefail
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      # GitHub cache entries are immutable; rotate weekly so newer Void packages
+      # are captured instead of repeatedly restoring a stale dependency snapshot.
+      - name: prepare Void binary package cache epoch
+        id: void-cache-epoch
+        run: echo "week=$(date -u +'%G-W%V')" >> "$GITHUB_OUTPUT"
+
       - name: restore Void binary package cache
         id: xbps-cache
         uses: actions/cache/restore@v6
         with:
           path: void-packages/hostdir/repocache-${{ env.XBPS_TARGET_ARCH }}
-          key: void-repocache-v2-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: void-repocache-v3-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}-${{ steps.void-cache-epoch.outputs.week }}
+          restore-keys: |
+            void-repocache-v3-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}-
+            void-repocache-v2-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: bootstrap xbps-src
         timeout-minutes: 15
@@ -263,7 +272,7 @@ jobs:
         continue-on-error: true
         with:
           path: void-packages/hostdir/repocache-${{ env.XBPS_TARGET_ARCH }}
-          key: void-repocache-v2-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}
+          key: void-repocache-v3-${{ env.XBPS_TARGET_ARCH }}-${{ hashFiles('void-packages/xbps-src', 'void-packages/srcpkgs/base-chroot/template') }}-${{ steps.void-cache-epoch.outputs.week }}
 
       - name: remove sccache credentials
         if: ${{ always() }}

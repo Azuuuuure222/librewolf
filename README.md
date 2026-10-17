@@ -103,6 +103,7 @@ Earlier README revisions also documented `browser.low_commit_space_threshold_mb=
 
 - C/C++ uses Clang 23 and `-O2 -march=skylake`; Rust uses `-C target-cpu=skylake` and `RUSTC_OPT_LEVEL=2`. The current template does not separately add `-mtune=skylake`, although older README revisions documented it.
 - Clang, LLVM, LLD and the LLVM major used by Void's Rust template are explicitly aligned at version 23. The validator checks this before compilation because incompatible LLVM bitcode can break cross-language LTO.
+- Void's `wasi-sdk` currently ships WASI compiler-rt builtins in an LLVM 22 flat `wasi/` layout; Clang 23 expects per-target WASI directories and a different archive name. The build recipe bridges those prebuilt WebAssembly object archives into Clang 23's resource directories inside the build chroot, then fails early with a clear error if a required archive is absent. The final package's native x86_64 runtime is unaffected.
 - Rust bindgen requires the unversioned `libclang.so`, which Void ships in `clang23-devel` under `/usr/lib/llvm/23/lib`. The package installs that build-only dependency and points `--with-libclang-path` at the versioned library directory instead of the obsolete `/usr/lib` path.
 - Full cross-language LTO uses `--enable-lto=cross,full` when the default LTO option is enabled. LLD adds `-Wl,--threads=N` and `-Wl,--lto-O2`; N follows the selected build job count.
 - **Do not re-add forced LTO partitions.** The latest fix leaves LLD's partitioning default because multiple partitions can separate the Linux sandbox's file-scope `SyscallAsm` symbol from its C++ callers.
@@ -136,7 +137,7 @@ The workflow:
 1. Runs on pushes to `master` that touch the package, workflow or validation scripts, or from manual dispatch.
 2. Frees runner disk space when less than 60 GiB is available, checks out this repository and Void's `void-packages` master, then overlays this package.
 3. Pre-validates the template and LLVM/Rust toolchain match; prepares static XBPS and the runner's user-namespace environment; bootstraps `xbps-src`.
-4. Restores the source, Void binary-package and (only when PGO is requested) profile caches.
+4. Restores the source, Void binary-package and (only when PGO is requested) profile caches. The Void binary-package cache rotates weekly so it refreshes rather than staying frozen at its first immutable entry.
 5. Creates the cache runtime environment for the chroot; builds with concurrency calculated from runner CPU count and available memory.
 6. Reserves approximately 2 GiB for the OS/linker and budgets around 3 GiB per concurrent worker, then caps workers by visible CPU count.
 7. Generates SHA-256/SHA-512 manifests for package and repository metadata and transfers a short-lived build artifact to publishing.
@@ -152,7 +153,7 @@ The validator checks shell syntax, package name, version, positive package revis
 |---|---|---|
 | Source archive | `librewolf-source-v5-<SHA256>` | Re-hash cached file against template checksum; refetch on mismatch |
 | Experimental PGO | `LIBREWOLF_PGO_CACHE_VERSION=v12` | Manual opt-in only; source digest, recipe, patches, `stab.h`, LLVM 23/Rust/Cargo/WASI/sccache/base-chroot inputs |
-| Void binary dependencies | `void-repocache-v2` | Keyed on `xbps-src` and base-chroot recipe |
+| Void binary dependencies | `void-repocache-v3` | Weekly immutable snapshot; restores the previous v2 cache or the latest matching v3 week, then saves a refreshed snapshot. This updates package downloads without creating a cache for every commit. |
 | Compiler cache | `librewolf-x86_64-musl-skylake-llvm23-v2` | Packaged `rust-sccache` with local disk + GitHub Actions cache |
 
 Important compiler-cache settings are `RUSTC_WRAPPER=/usr/bin/sccache`, `SCCACHE_CLIENT_SIDE=false`, `SCCACHE_DIR=/host/sccache`, `SCCACHE_CACHE_SIZE=16G`, `SCCACHE_CACHE_ZSTD_LEVEL=1` and `SCCACHE_IDLE_TIMEOUT=0`. The multi-level chain is `disk,gha` and remote write failures are ignored so a transient cache outage does not fail the package build. The build uses a packaged cache executable because `xbps-src` can clean/reconstruct its chroot, and it explicitly points Firefox configure at `/usr/bin/sccache` because a bare executable name proved unreliable.
@@ -167,7 +168,7 @@ Cache keys are optimizations, never authorities: source is checksum-verified, an
 | `firefox-146-musl-linux-sys-prctl-conflict.patch` | Avoids a musl WebRTC conflict between Linux and system `prctl` headers. |
 | `firefox-148-mach-clobber.patch` | Corrects `mozshellutil` lookup in Firefox's build environment dump helper. |
 | `fix-fortify-system-wrappers.patch` | Removes `features.h` from generated system headers for this musl/system-wrapper configuration. |
-| `llvm22.patch` | The filename is historical; the patch changes the WASI target triplet from `wasm32-wasi` to `wasm32-wasip1`. Review/rename it as part of LLVM 23 maintenance. |
+| `wasi-target-wasip1.patch` | Changes Mozilla's WASI target triplet from the old `wasm32-wasi` spelling to `wasm32-wasip1`, matching the renamed target. |
 | `mallinfo.patch` | Limits Linux system heap `mallinfo` reporting to glibc. |
 | `parakeet-missing-cstdint.patch` | Adds `<cstdint>` to Parakeet's backend header. This is distinct from a different older missing-`cstdint` patch that became obsolete after its fix reached upstream. |
 | `sandbox-sched_setscheduler.patch` | Adjusts Linux sandbox scheduler syscall filtering for musl while retaining the glibc PID-restricted logic. |
@@ -187,7 +188,7 @@ The current recipe also removes `sys/single_threaded.h` from Firefox's generated
 | Oct 14 | Updated to LibreWolf 158.0; fixed scheduler sandbox patch ranges, `mallinfo`, source-cache identity and obsolete Rust LTO handling; removed old branch-cleanup logic. |
 | Oct 15 | Tuned Fission reuse, corrected LLD worker parsing, improved PGO helpers/cache handling, documented direct-to-master workflow and shortened the 1,078-line README. |
 | Oct 16 | Tried headless and native-Wayland PGO, then switched to optional Xvfb PGO after profile startup failures; added an LTO-only fallback, validation guards and packaging/CI cleanup. |
-| Oct 17 | Pinned Clang/LLVM/LLD to LLVM 23 to match Void Rust, removed forced LTO partitioning, and corrected the bindgen libclang dependency/path after configure could not find `libclang.so`. |
+| Oct 17 | Pinned Clang/LLVM/LLD to LLVM 23 to match Void Rust, removed forced LTO partitioning, corrected bindgen's versioned `libclang.so` path, and bridged Void's LLVM 22 WASI runtime layout to Clang 23. |
 
 Key lessons from failures: don't copy unmanaged tools into an XBPS chroot; use explicit compiler-cache paths; validate package/source metadata before costly builds; re-hash source-cache entries; validate LLVM profiles instead of trusting file existence; make cache keys specific to profile-affecting inputs; don't base CI worker counts on the laptop; don't force LTO partitions that can break sandbox linkage; and remove stale patches when upstream fixes or source layout make them obsolete.
 

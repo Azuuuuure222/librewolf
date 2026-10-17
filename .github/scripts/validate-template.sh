@@ -52,6 +52,19 @@ grep -Fq 'clang${_llvmver}-devel' "$template" || {
   echo "Clang's development package is required for the unversioned libclang.so used by bindgen" >&2
   exit 1
 }
+wasi_llvmver=$(sed -n 's/^_wasi_llvmver=\\([0-9][0-9]*\\)$/\\1/p' "$template")
+[[ "$wasi_llvmver" =~ ^[0-9]+$ ]] || {
+  echo "template must pin the LLVM version used by Void's WASI runtime" >&2
+  exit 1
+}
+grep -Fq 'prepare_wasi_builtins()' "$template" || {
+  echo "template must bridge Void's flat WASI compiler-rt layout to Clang's target directories" >&2
+  exit 1
+}
+grep -Fq 'libclang_rt.builtins-wasm32.a' "$template" || {
+  echo "template must validate and link the WASI compiler-rt builtins archive" >&2
+  exit 1
+}
 grep -Fq -- '--with-libclang-path=/usr/lib/llvm/${_llvmver}/lib' "$template" || {
   echo "bindgen must search the matching versioned LLVM library directory" >&2
   exit 1
@@ -69,6 +82,22 @@ if [ -n "${2:-}" ]; then
   }
   [ "$llvmver" = "$rust_llvmver" ] || {
     echo "LLVM toolchain mismatch: LibreWolf uses LLVM $llvmver but Void Rust emits LLVM $rust_llvmver bitcode" >&2
+    exit 1
+  }
+fi
+if [ -n "${3:-}" ]; then
+  wasi_template=$3
+  [ -f "$wasi_template" ] || {
+    echo "Void WASI SDK template not found: $wasi_template" >&2
+    exit 1
+  }
+  wasi_sdk_llvmver=$(sed -n 's/^_llvmversion="\\([0-9][0-9]*\\)\\..*/\\1/p' "$wasi_template")
+  [[ "$wasi_sdk_llvmver" =~ ^[0-9]+$ ]] || {
+    echo "could not determine LLVM major from Void WASI SDK template: $wasi_template" >&2
+    exit 1
+  }
+  [ "$wasi_llvmver" = "$wasi_sdk_llvmver" ] || {
+    echo "WASI runtime path mismatch: LibreWolf expects LLVM $wasi_llvmver compiler-rt but Void wasi-sdk uses LLVM $wasi_sdk_llvmver" >&2
     exit 1
   }
 fi

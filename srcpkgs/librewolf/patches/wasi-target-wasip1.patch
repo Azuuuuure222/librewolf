@@ -1,4 +1,4 @@
-llvm 22 renamed the wasm32-wasi target to wasm32-wasip1
+Use the WASI Preview 1 target name recognized by this Firefox source and modern LLVM.
 --- a/build/moz.configure/toolchain.configure
 +++ b/build/moz.configure/toolchain.configure
 @@ -1119,7 +1123,7 @@

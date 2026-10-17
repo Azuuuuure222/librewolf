@@ -21,6 +21,7 @@ case "$XBPS_TARGET_MACHINE" in
 esac
 
 _llvmver=23
+_wasi_llvmver=22
 hostmakedepends="unzip zip pkg-config perl python3 yasm rust
  cargo rust-sccache llvm${_llvmver} clang${_llvmver} clang${_llvmver}-devel lld${_llvmver} nodejs cbindgen nasm which
  tar xz $(vopt_if pgo 'xvfb-run dbus mesa-dri vulkan-loader pciutils')
@@ -97,6 +98,49 @@ do_build() {
 
 	test -x /usr/bin/sccache
 	/usr/bin/sccache --version
+
+	# Fail before configure if bindgen's version-matched libclang is missing.
+	if [ "$build_option_clang" ]; then
+		libclang_path="/usr/lib/llvm/${_llvmver}/lib/libclang.so"
+		if [ ! -r "$libclang_path" ]; then
+			echo "Required libclang is missing: $libclang_path (install clang${_llvmver}-devel)." >&2
+			exit 1
+		fi
+	fi
+
+	# Void's wasi-sdk ships LLVM 22 compiler-rt builtins in a flat 'wasi/'
+	# layout, while Clang 23 looks in per-target wasip1 directories.
+	# Link these prebuilt WebAssembly object archives into Clang's resource layout.
+	prepare_wasi_builtins() {
+		[ -n "$build_option_wasi" ] || return 0
+		local wasi_runtime_root="/usr/lib/llvm/${_wasi_llvmver}/lib/clang/${_wasi_llvmver}/lib"
+		local clang_resource_root="/usr/lib/clang/${_llvmver}/lib"
+		local specification runtime_subdir target_triple source_dir target_dir
+		local -a wasi_targets=(
+			"wasi:wasm32-unknown-wasip1"
+			"wasi-threads:wasm32-unknown-wasip1-threads"
+		)
+
+		for specification in "${wasi_targets[@]}"; do
+			runtime_subdir="${specification%%:*}"
+			target_triple="${specification#*:}"
+			source_dir="${wasi_runtime_root}/${runtime_subdir}"
+			target_dir="${clang_resource_root}/${target_triple}"
+
+			if [ ! -s "${source_dir}/libclang_rt.builtins-wasm32.a" ]; then
+				echo "Required WASI compiler-rt archive is missing: ${source_dir}/libclang_rt.builtins-wasm32.a" >&2
+				return 1
+			fi
+			mkdir -p "$target_dir"
+			ln -sfn "${source_dir}/libclang_rt.builtins-wasm32.a" "${target_dir}/libclang_rt.builtins.a"
+			if [ -s "${source_dir}/libgcc.a" ]; then
+				ln -sfn "${source_dir}/libgcc.a" "${target_dir}/libgcc.a"
+			fi
+		done
+		echo "WASI compiler-rt archives prepared for Clang ${_llvmver}."
+	}
+
+	prepare_wasi_builtins || exit 1
 
 	disable_wasi() {
 		if [ "$build_option_wasi" ]; then
