@@ -61,12 +61,16 @@ grep -Fq 'prepare_wasi_builtins()' "$template" || {
   echo "template must bridge Void's per-target WASI compiler-rt layout to Clang's target directories" >&2
   exit 1
 }
-grep -Fq 'source_dir="${wasi_runtime_root}/${target_triple}"' "$template" || {
-  echo "template must locate WASI runtime archives under their actual target-triple directories" >&2
+grep -Fq 'find "$wasi_runtime_root" -type f' "$template" || {
+  echo "template must discover the installed WASI compiler-rt archive without assuming its directory layout" >&2
+  exit 1
+}
+grep -Fq "libclang_rt.builtins-wasm32.a" "$template" || {
+  echo "template must support the compiler-rt archive filename shipped by wasi-sdk" >&2
   exit 1
 }
 grep -Fq 'libclang_rt.builtins.a' "$template" || {
-  echo "template must validate and link the target-specific WASI compiler-rt archive" >&2
+  echo "template must link the discovered WASI compiler-rt archive into Clang's target-specific resource directories" >&2
   exit 1
 }
 grep -Fq '"wasm32-unknown-wasip1-threads"' "$template" || {
