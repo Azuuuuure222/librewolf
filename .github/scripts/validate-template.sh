@@ -52,7 +52,7 @@ grep -Fq 'clang${_llvmver}-devel' "$template" || {
   echo "Clang's development package is required for the unversioned libclang.so used by bindgen" >&2
   exit 1
 }
-wasi_llvmver=$(sed -n 's/^_wasi_llvmver=\\([0-9][0-9]*\\)$/\\1/p' "$template")
+wasi_llvmver=$(sed -n 's/^_wasi_llvmver=\([0-9][0-9]*\)$/\1/p' "$template")
 [[ "$wasi_llvmver" =~ ^[0-9]+$ ]] || {
   echo "template must pin the LLVM version used by Void's WASI runtime" >&2
   exit 1

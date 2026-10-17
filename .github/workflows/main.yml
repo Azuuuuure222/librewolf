@@ -267,7 +267,7 @@ jobs:
           key: librewolf-pgo-${{ env.LIBREWOLF_PGO_CACHE_VERSION }}-${{ steps.meta.outputs.sha256 }}-${{ hashFiles('srcpkgs/librewolf/template', 'srcpkgs/librewolf/patches/**', 'srcpkgs/librewolf/files/stab.h', 'void-packages/srcpkgs/llvm23/template', 'void-packages/srcpkgs/rust/template', 'void-packages/srcpkgs/cargo/template', 'void-packages/srcpkgs/wasi-sdk/template', 'void-packages/srcpkgs/rust-sccache/template', 'void-packages/srcpkgs/base-chroot/template') }}
 
       - name: save Void binary package cache
-        if: ${{ always() && !cancelled() && steps.xbps-cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && !cancelled() && steps.void-cache-epoch.outputs.week != '' && steps.xbps-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v6
         continue-on-error: true
         with:
