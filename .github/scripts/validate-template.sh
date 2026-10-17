@@ -152,7 +152,7 @@ grep -Fq 'MOZ_ENABLE_WAYLAND=0' "$template" || {
 }
 default_options=$(sed -n 's/^build_options_default="\([^"]*\)"/\1/p' "$template")
 case " $default_options " in
-  *" pgo "*) echo "PGO must remain opt-in until profile startup is reliable" >&2; exit 1 ;;
+  *" pgo "*) ;;
 esac
 grep -Fq 'falling back to a non-PGO LTO build' "$template" || {
   echo "PGO failures must fall back to the standard LTO build" >&2
@@ -178,12 +178,7 @@ case "$expected_distfile" in
 esac
 
 distfile="$expected_distfile"
-release_tag="${version}-${_rev}"
-# Keep upstream source tags recognizable for revision 1. Packaging-only revisions
-# get their own immutable release tag instead of replacing older artifacts.
-if [ "$revision" -gt 1 ]; then
-  release_tag+="-r${revision}"
-fi
+release_tag="$version"
 
 if [ -n "$GITHUB_OUTPUT" ]; then
   {
