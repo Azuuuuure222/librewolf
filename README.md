@@ -12,6 +12,24 @@ MOZ_ENABLE_WAYLAND=1 librewolf-wayland
 
 Verify `about:support` → **Window Protocol** reports `wayland`, not `xwayland`. Xvfb/X11 is used only by the optional CI PGO profiling path; it is not a runtime requirement.
 
+
+## Download and install
+
+Open [GitHub Releases](https://github.com/Azuuuuure222/librewolf/releases) and choose a release that actually contains the required assets. Download its `.xbps` package, `x86_64-musl-repodata`, `SHA256SUMS` and `SHA512SUMS` into one directory. Verify the downloaded assets:
+
+```sh
+sha256sum --check SHA256SUMS
+sha512sum --check SHA512SUMS
+```
+
+Install through the local repository directory while keeping the official Void repositories available for dependencies:
+
+```sh
+sudo xbps-install --repository="$PWD" librewolf
+```
+
+Keep the package, repository metadata and checksum files from the **same release**. Do not mix assets from different tags. The current source recipe may be newer than the latest published binary; always use the actual release page's filenames and availability.
+
 ## Target tuning
 
 - C/C++: Clang/LLD/LLVM 23 (matched to Void's Rust LLVM version), `-O2 -march=skylake`; Rust: `-C target-cpu=skylake`.
