@@ -91,7 +91,7 @@ if [ -n "${3:-}" ]; then
     echo "Void WASI SDK template not found: $wasi_template" >&2
     exit 1
   }
-  wasi_sdk_llvmver=$(sed -n 's/^_llvmversion="\\([0-9][0-9]*\\)\\..*/\\1/p' "$wasi_template")
+  wasi_sdk_llvmver=$(sed -n 's/^_llvmversion="\([0-9][0-9]*\)\..*/\1/p' "$wasi_template")
   [[ "$wasi_sdk_llvmver" =~ ^[0-9]+$ ]] || {
     echo "could not determine LLVM major from Void WASI SDK template: $wasi_template" >&2
     exit 1
